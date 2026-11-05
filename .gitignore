@@ -1,0 +1,7 @@
+# Only the script, the README and this file are tracked; everything else
+# (CLAUDE.md, scratch files, .DS_Store, ...) is ignored.
+# To track another file later (e.g. a LICENSE), add a "!" line for it.
+*
+!.gitignore
+!README.md
+!a1ry-dash.user.js
