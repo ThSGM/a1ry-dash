@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         a1ry Dash
 // @namespace    https://github.com/ThSGM/a1ry-dash
-// @version      0.16
+// @version      0.17
 // @description  A movable round launcher for Torn: tap it for a fan of shortcuts (faction messages, settings and your own links). Desktop, mobile and TornPDA
 // @author       ThSGM
 // @match        https://www.torn.com/*
@@ -52,7 +52,7 @@
 // plain fetch, TornPDA can't follow Google's redirect on POST). One tab fetches
 // for all (a1ry_dash_msgs). Opening the panel always fetches; start-up, the
 // fan opening and the tab coming back into view fetch only if the copy is over
-// 5 minutes old.
+// 1 minute old.
 // Update opens the script's Greasy Fork page (UPDATE_URL), whose Install
 // button updates it.
 //
@@ -76,7 +76,7 @@
     if (document.getElementById('a1ry-dash')) return;
 
     // Keep in step with @version above (GM_info isn't available in every userscript host)
-    const SCRIPT_VERSION = '0.16';
+    const SCRIPT_VERSION = '0.17';
     const KEY = 'a1ry_dash_';
     // Settings' Update button: the script's Greasy Fork page, whose Install button updates it.
     // Empty = greyed out
@@ -90,7 +90,7 @@
     // a plain fetch to it, and TornPDA can't follow Google's redirect on POST, so every request is
     // a GET through GM_xmlhttpRequest with anonymous: true (Google login cookies cause 404s)
     const SERVER_URL = 'https://script.google.com/macros/s/AKfycbyL6VVu7nxUfOh02DWUjUAOFTQr3kXJ4Wsi41ED5a9-7arkJQPjk44wXwP8_FPcjGT9/exec';
-    const MSG_STALE_MS = 5 * 60 * 1000; // refetch messages when the copy is older than this
+    const MSG_STALE_MS = 60 * 1000;      // refetch messages when the copy is older than this
     const MSG_BUSY_MS = 30 * 1000;      // another tab's fetch counts as running for this long
 
     // Built-in nodes. Settings and + are added after these and the user's shortcuts
