@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         a1ry Dash
 // @namespace    https://github.com/ThSGM/a1ry-dash
-// @version      0.14
+// @version      0.16
 // @description  A movable round launcher for Torn: tap it for a fan of shortcuts (faction messages, settings and your own links). Desktop, mobile and TornPDA
 // @author       ThSGM
 // @match        https://www.torn.com/*
@@ -27,7 +27,8 @@
 //              answers can be changed until the message closes. The panel
 //              has a slim inbox list at the top (closed envelope = new, open =
 //              read, green arrow = answered, time left on the right) and the
-//              chosen message below it.
+//              chosen message below it (its title and time left are on its
+//              highlighted row, not repeated above the message).
 //              The martini flashes while a new message waits for answers
 //   <yours>    one node per shortcut you added; its icon is up to 3 letters
 //              (the first letter of its name by default)
@@ -75,7 +76,7 @@
     if (document.getElementById('a1ry-dash')) return;
 
     // Keep in step with @version above (GM_info isn't available in every userscript host)
-    const SCRIPT_VERSION = '0.14';
+    const SCRIPT_VERSION = '0.16';
     const KEY = 'a1ry_dash_';
     // Settings' Update button: the script's Greasy Fork page, whose Install button updates it.
     // Empty = greyed out
@@ -115,10 +116,10 @@
     // neighbouring child nodes along the arc. The arc widens with more nodes, up to MAX_SPREAD
     const MAIN_SIZE = 44;
     const CHILD_SIZE = 36;
-    const FAN_RADIUS = 74;
-    const ARC_GAP = 46;
+    const FAN_RADIUS = 58;
+    const ARC_GAP = 40;
     const MAX_SPREAD = 200;
-    const FAN_RADIUS_STEP = 34; // extra radius per ring once a single arc is full
+    const FAN_RADIUS_STEP = 40; // extra radius per ring once a single arc is full
 
     // -------------------------------------------------------------------
     // 1. Storage
@@ -259,10 +260,6 @@
         .nd-panel.nd-wide { width: calc(380px * var(--p)); }
         .nd-msg { margin-top: calc(10px * var(--p)); padding: calc(8px * var(--p)); border: 1px solid #333; border-radius: calc(6px * var(--p)); background: #1a1a1a !important; }
         .nd-msg.nd-new { border-color: #7a3a3a !important; }
-        .nd-msg-head { display: flex; align-items: baseline; gap: calc(8px * var(--p)); margin-top: calc(12px * var(--p)); }
-        .nd-msg-head h4 { flex: 1; margin: 0; font-size: calc(14px * var(--p)); color: #fff !important; }
-        .nd-when { flex: 0 0 auto; font-size: calc(11px * var(--p)); color: #e0b030; white-space: nowrap; }
-        .nd-msg { margin-top: calc(6px * var(--p)); }
         .nd-msg .nd-body { margin: 0; white-space: pre-wrap; word-wrap: break-word; color: #ddd; }
         .nd-q { margin-top: calc(18px * var(--p)); }
         .nd-msg .nd-body + .nd-q { margin-top: calc(14px * var(--p)); }
@@ -976,21 +973,19 @@
     let msgDirty = false; // the user has changed an answer but not saved it
     let msgCurrentId = null; // the message shown in the panel
 
-    // Time left before a message closes: "53 h 12 min left", "12 min left", "Closed"
-    // short = true gives the inbox form: "53h 12m", "12m", "Closed"
-    function timeLeft(iso, short) {
+    // Time left before a message closes, for the inbox list: "53h 12m", "12m", "Closed"
+    function timeLeft(iso) {
         const ms = new Date(iso).getTime() - Date.now();
         if (isNaN(ms)) return '';
         if (ms <= 0) return 'Closed';
         const min = Math.ceil(ms / 60000);
         const h = Math.floor(min / 60);
-        if (short) return (h ? h + 'h ' : '') + (min % 60) + 'm';
-        return (h ? h + ' h ' : '') + (min % 60) + ' min left';
+        return (h ? h + 'h ' : '') + (min % 60) + 'm';
     }
     // The countdown ticks once a minute, only while the panel is open
     let countdownTimer = null;
     function updateCountdowns() {
-        msgList.querySelectorAll('[data-expires]').forEach(e => { e.textContent = timeLeft(e.dataset.expires, e.classList.contains('nd-due')); });
+        msgList.querySelectorAll('[data-expires]').forEach(e => { e.textContent = timeLeft(e.dataset.expires); });
     }
     function startCountdown() {
         if (countdownTimer) return;
@@ -1051,8 +1046,9 @@
             li.innerHTML = svg(state === 'unread' ? 'mail' : state === 'replied' ? 'reply' : 'mailOpen');
             li.appendChild(el('span', '', m.title || '(no title)'));
             if (m.expires) {
-                const due = el('b', 'nd-due', timeLeft(m.expires, true));
+                const due = el('b', 'nd-due', timeLeft(m.expires));
                 due.dataset.expires = m.expires;
+                due.title = 'Closes ' + new Date(m.expires).toISOString().slice(0, 16).replace('T', ' ') + ' TCT';
                 li.appendChild(due);
             }
             li.addEventListener('click', () => showMessageAt(j));
@@ -1071,17 +1067,10 @@
     }
 
     function renderMessage(m, isNew) {
+        // The title and time left are on the highlighted inbox row above, so the box has neither
         const frag = document.createDocumentFragment();
-        const head = el('div', 'nd-msg-head');
-        head.appendChild(el('h4', '', m.title || '(no title)'));
-        if (m.expires) {
-            const when = el('span', 'nd-when', timeLeft(m.expires));
-            when.dataset.expires = m.expires;
-            when.title = 'Closes ' + new Date(m.expires).toISOString().slice(0, 16).replace('T', ' ') + ' TCT';
-            head.appendChild(when);
-        }
         const box = el('div', 'nd-msg' + (isNew ? ' nd-new' : ''));
-        frag.append(head, box);
+        frag.appendChild(box);
         if (m.body) box.appendChild(el('div', 'nd-body', m.body));
         if (!m.questions || !m.questions.length) return frag;
 

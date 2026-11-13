@@ -9,10 +9,10 @@ towards the middle of the screen:
 - **Messages**: faction messages from the officers of Naughty Souls (this is not Torn's own
   mail). A red number on the martini and on Messages shows how many are new. Some messages ask
   questions (pick one, pick several, or write an answer): fill them in and press **Save**. You
-  can change your answers until the message closes; a countdown above each message shows the
-  hours and minutes left. A slim list at the top shows every
+  can change your answers until the message closes. A slim list at the top shows every
   message (closed envelope = new, open envelope = read, green arrow = answered), with the time left (e.g.
-  `29h 5m`) on messages that have a deadline; tap one to open it below. The martini flashes gold while a new message
+  `29h 5m`, ticking down each minute) on messages that have a deadline; tap one to open it below. The open
+  message's row is highlighted. The martini flashes gold while a new message
   is waiting for your answers. Needs your API key in Settings.
 - **Your shortcuts**: one button per link you added, showing its icon: up to 3 letters (the first
   letter of its name if you don't choose).
