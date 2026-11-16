@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         a1ry Dash
 // @namespace    https://github.com/ThSGM/a1ry-dash
-// @version      0.26
+// @version      0.31
 // @description  A movable round launcher for Torn: tap it for a fan of shortcuts (faction messages, settings and your own links). Desktop, mobile and TornPDA
 // @author       ThSGM
 // @match        https://www.torn.com/*
@@ -30,7 +30,10 @@
 //              chosen message below it (its title and time left are on its
 //              highlighted row, not repeated above the message).
 //              The martini flashes while a new message waits for answers
-//   Offline    (bed) going offline: pick 1-12 hours and one request: a
+//   Offline    (bed) going offline. At the top: your revive setting from
+//              Torn (v2 user/profile with the Settings key); if it is
+//              Everyone, a flashing link to the hospital page instead.
+//              Pick 1-12 hours and one request: a
 //              bounty on yourself, a merc hit or a Stricken merc hit. It goes
 //              to the faction sheet's Offline tab for an officer to action
 //              (no API key is sent anywhere else). It can be cancelled until
@@ -50,11 +53,13 @@
 //              (type, text, options one per line; Back / Next question /
 //              Finish), a check screen, then Confirm and send. The server
 //              gives the ID, MMDD_XX (TCT date + number)
+//   War        (crossed swords) a fixed group: tap it and two more bubbles pop
+//              out beside it: Faction war (flag) and Chain (chain)
+//   Items      (box) a fixed group: Items (backpack) and Faction armory (locker)
 //   <yours>    one node per shortcut; its icon is up to 3 letters (the first
-//              letter of its name by default). War (crossed swords) and Chain
-//              (a chain) are added once on first run, and can be removed
-//   +          add a shortcut: tap a suggestion (War, Chain, Hospital, Item,
-//              Gym, with icons swords, chain, Hos, Itm, Gym), or give a name, an icon and a URL (a full https:// link
+//              letter of its name by default)
+//   +          add a shortcut: tap a suggestion (Hospital, Gym), or give a
+//              name, an icon and a URL (a full https:// link
 //              or a Torn path such as /factions.php)
 //   Settings   Limited API key (Save checks it), size, links in a new tab,
 //              remove shortcuts, reset position, Help, Update
@@ -97,7 +102,7 @@
     if (document.getElementById('a1ry-dash')) return;
 
     // Keep in step with @version above (GM_info isn't available in every userscript host)
-    const SCRIPT_VERSION = '0.26';
+    const SCRIPT_VERSION = '0.31';
     const KEY = 'a1ry_dash_';
     // Settings' Update button: the script's Greasy Fork page, whose Install button updates it.
     // Empty = greyed out
@@ -122,6 +127,7 @@
     const MERC_LIVE = false;
     const MERC_URL = 'https://ultimata.net/api/v1/requestmerc';
     const BOUNTY_URL = 'https://www.torn.com/bounties.php?p=add&XID=';
+    const HOSPITAL_URL = 'https://www.torn.com/hospitalview.php';
     const OFFLINE_HOURS_MAX = 12;
 
     // Built-in nodes. Settings and + are added after these and the user's shortcuts
@@ -130,13 +136,25 @@
         { id: 'offline', label: 'Going offline', icon: 'bed', kind: 'offline' },
     ];
 
-    // Suggested shortcuts, offered at the top of the Add panel (one tap adds one). `sym` draws
-    // an ICONS picture instead of the letters; `isDefault` ones are added once on first run
+    // Fixed groups after the built-ins: tapping one pops its secondary bubbles out beside it
+    const FACTION_URL = 'https://www.torn.com/factions.php?step=your&type=1#/';
+    const GROUPS = [
+        { id: 'war', label: 'War', icon: 'swords', links: [
+            { label: 'Faction war', icon: 'flag', url: FACTION_URL + 'war/rank' },
+            { label: 'Chain', icon: 'chain', url: FACTION_URL + 'war/chain' },
+        ] },
+        { id: 'items', label: 'Items', icon: 'box', links: [
+            { label: 'Items', icon: 'backpack', url: 'https://www.torn.com/item.php' },
+            { label: 'Faction armory', icon: 'locker', url: FACTION_URL + 'tab=armoury' },
+        ] },
+    ];
+    // The War and Chain shortcuts that 0.18-0.30 added by default (now in the War group)
+    const OLD_DEFAULT_URLS = [FACTION_URL + 'war/rank', FACTION_URL + 'war/chain'];
+
+    // Suggested shortcuts, offered at the top of the Add panel (one tap adds one). A `sym`
+    // draws an ICONS picture instead of the letters
     const SUGGESTED = [
-        { name: 'War', icon: 'War', sym: 'swords', isDefault: true, url: 'https://www.torn.com/factions.php?step=your&type=1#/war/rank' },
-        { name: 'Chain', icon: 'Chn', sym: 'chain', isDefault: true, url: 'https://www.torn.com/factions.php?step=your&type=1#/war/chain' },
         { name: 'Hospital', icon: 'Hos', url: 'https://www.torn.com/hospitalview.php' },
-        { name: 'Item', icon: 'Itm', url: 'https://www.torn.com/item.php' },
         { name: 'Gym', icon: 'Gym', url: 'https://www.torn.com/gym.php' },
     ];
     // A shortcut's icon: up to 3 letters or digits
@@ -153,6 +171,7 @@
     const ARC_GAP = 40;
     const MAX_SPREAD = 200;
     const FAN_RADIUS_STEP = 40; // extra radius per ring once a single arc is full
+    const SUB_STEP = 42;        // a group's secondary bubbles sit this much further out
 
     // -------------------------------------------------------------------
     // 1. Storage
@@ -176,32 +195,25 @@
     // The last check of the saved key: { text, state: 'ok'|'warn'|'bad' }
     let apiStatus = load('api_status', null);
     if (!Array.isArray(shortcuts)) shortcuts = [];
-    // 0.12 renamed the suggestions' icons (W -> War, ...) and 0.18 gave War and Chain pictures:
-    // update shortcuts added from a suggestion that still have its letters
+    // 0.12 renamed the suggestions' icons (W -> War, ...): update shortcuts added from them
     function upgradeIcons() {
         let changed = false;
         shortcuts.forEach(sc => {
             const g = SUGGESTED.find(x => x.url === sc.url);
-            if (!g) return;
-            if (sc.name === g.name && sc.icon === g.icon.charAt(0)) { sc.icon = g.icon; changed = true; }
-            if (g.sym && !sc.sym && (!sc.icon || sc.icon === g.icon || sc.icon === g.icon.charAt(0))) {
-                sc.sym = g.sym; changed = true;
-            }
+            if (g && sc.name === g.name && sc.icon === g.icon.charAt(0)) { sc.icon = g.icon; changed = true; }
         });
         if (changed) save('shortcuts', shortcuts);
     }
     upgradeIcons();
-    // Default shortcuts (War, Chain): added once, in front, unless already there. Removing one
-    // later sticks, because a1ry_dash_defaults remembers this ran
-    function addDefaults() {
-        if (load('defaults', 0) >= 1) return;
-        const have = new Set(shortcuts.map(s => s.url));
-        const add = SUGGESTED.filter(g => g.isDefault && !have.has(g.url))
-            .map(g => ({ name: g.name, url: g.url, icon: g.icon, sym: g.sym }));
-        if (add.length) { shortcuts = add.concat(shortcuts); save('shortcuts', shortcuts); }
-        save('defaults', 1);
+    // 0.31: War and Chain live in the fixed War group, so the old War/Chain shortcuts go, once
+    // (a1ry_dash_defaults 2 = done)
+    function dropOldDefaults() {
+        if (load('defaults', 0) >= 2) return;
+        const keep = shortcuts.filter(s => OLD_DEFAULT_URLS.indexOf(s.url) === -1);
+        if (keep.length !== shortcuts.length) { shortcuts = keep; save('shortcuts', shortcuts); }
+        save('defaults', 2);
     }
-    addDefaults();
+    dropOldDefaults();
     // Position: { x: 'left'|'right', xv, y: 'top'|'bottom', yv }
     let pos = load('pos', { x: 'right', xv: 16, y: 'bottom', yv: 120 });
     // Faction messages. session: the server's login token { token, id, name } (never the key).
@@ -224,6 +236,14 @@
         plus: '<path d="M12 5v14M5 12h14"/>',
         // A bed: headboard, mattress, foot, a pillow and a blanket
         bed: '<path d="M3 6v13M3 15h18v4"/><path d="M10 15v-4h8a3 3 0 0 1 3 3v1"/><circle cx="6.5" cy="12" r="1.8"/>',
+        // A banner on a pole (faction war page)
+        flag: '<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>',
+        // A box (Items group)
+        box: '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/>',
+        // A backpack (your items)
+        backpack: '<path d="M6 10a6 6 0 0 1 12 0v10H6z"/><path d="M9 4.5V4a3 3 0 0 1 6 0v.5"/><path d="M9 14h6v3H9z"/>',
+        // A double-door locker (faction armory)
+        locker: '<rect x="5" y="3" width="14" height="18" rx="1"/><path d="M12 3v18M8 7h2M14 7h2M10 13v2M14 13v2"/>',
         // Two crossed swords: blade, guard, grip and pommel each
         swords: '<path d="M3 3l13 13M14 18l4-4M17 17l2.5 2.5"/><circle cx="20.5" cy="20.5" r="1"/>' +
             '<path d="M21 3L8 16M6 14l4 4M7 17l-2.5 2.5"/><circle cx="3.5" cy="20.5" r="1"/>',
@@ -262,6 +282,12 @@
             transition: transform 0.22s cubic-bezier(.2,.9,.3,1.2), opacity 0.18s; }
         #a1ry-dash.nd-open .nd-child { opacity: 1; pointer-events: auto;
             transform: translate(calc(var(--dx) * var(--s)), calc(var(--dy) * var(--s))) scale(1); }
+        /* A group's secondary bubbles: hidden at the group's bubble until it is tapped */
+        #a1ry-dash.nd-open .nd-child.nd-subnode { opacity: 0; pointer-events: none;
+            transform: translate(calc(var(--px) * var(--s)), calc(var(--py) * var(--s))) scale(0.4); }
+        #a1ry-dash.nd-open .nd-child.nd-subnode.nd-sub-show { opacity: 1; pointer-events: auto;
+            transform: translate(calc(var(--dx) * var(--s)), calc(var(--dy) * var(--s))) scale(1); }
+        .nd-child.nd-group-open { border-color: #e0b030 !important; color: #fff !important; }
         .nd-letter { font-weight: bold; font-size: calc(15px * var(--s)); line-height: 1; pointer-events: none; white-space: nowrap; }
         .nd-letter.nd-l2 { font-size: calc(12.5px * var(--s)); }
         .nd-letter.nd-l3 { font-size: calc(9.5px * var(--s)); letter-spacing: calc(-0.4px * var(--s)); }
@@ -272,12 +298,12 @@
         .nd-panel { --p: ${PANEL_SCALE}; display: none; position: fixed; z-index: 999991; left: 50%; top: 50%; transform: translate(-50%, -50%);
             width: calc(300px * var(--p)); max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); overflow-y: auto;
             background: rgba(17,17,17,0.97) !important; border: 2px solid #444 !important; border-radius: calc(8px * var(--p));
-            color: #eee !important; font-size: calc(13px * var(--p)); padding: calc(12px * var(--p)); box-shadow: 0 calc(6px * var(--p)) calc(20px * var(--p)) rgba(0,0,0,0.7);
+            color: #eee !important; font-size: calc(13px * var(--p)); padding: calc(16px * var(--p)) calc(18px * var(--p)); box-shadow: 0 calc(6px * var(--p)) calc(20px * var(--p)) rgba(0,0,0,0.7);
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
         .nd-panel, .nd-panel * { box-sizing: border-box; }
         .nd-panel.nd-show { display: block; }
-        .nd-panel h3 { margin: 0 0 calc(10px * var(--p)); font-size: calc(11.5px * var(--p)); text-transform: uppercase; letter-spacing: 0.06em;
-            color: #fff !important; display: flex; justify-content: space-between; align-items: center; }
+        .nd-panel h3 { margin: 0 0 calc(12px * var(--p)); font-family: inherit; font-size: calc(14px * var(--p)); font-weight: normal; line-height: 1.3;
+            text-transform: uppercase; letter-spacing: 0.04em; color: #e0b030 !important; display: flex; justify-content: space-between; align-items: center; }
         .nd-panel h3 small { font-size: calc(10px * var(--p)); color: #777; font-weight: normal; text-transform: none; letter-spacing: 0; }
         .nd-panel label { display: block; margin: calc(8px * var(--p)) 0 calc(3px * var(--p)); color: #aaa; font-size: calc(12px * var(--p)); }
         .nd-panel input[type="text"], .nd-panel input[type="url"] { width: 100%; padding: calc(7px * var(--p)) calc(8px * var(--p)); font-size: 16px; /* calc(16px * var(--p)) stops iOS zooming in */
@@ -328,7 +354,7 @@
         .nd-msg .nd-row { margin-top: calc(8px * var(--p)); align-items: center; }
         .nd-msg .nd-row .nd-status { flex: 1; margin: 0; }
         .nd-msg .nd-row .nd-btn { flex: 0 0 auto; }
-        .nd-panel h3 .nd-x { flex: 0 0 auto; width: calc(28px * var(--p)); height: calc(28px * var(--p)); margin: -6px -6px 0 0; padding: 0; border: none !important;
+        .nd-panel h3 .nd-x { flex: 0 0 auto; width: calc(28px * var(--p)); height: calc(28px * var(--p)); margin: calc(-6px * var(--p)) 0; padding: 0; border: none !important;
             background: none !important; color: #999 !important; font-size: calc(22px * var(--p)); line-height: calc(28px * var(--p)); cursor: pointer; border-radius: calc(4px * var(--p)); }
         .nd-panel h3 .nd-x:hover, .nd-panel h3 .nd-x:focus-visible { color: #fff !important; background: #333 !important; outline: none; }
         .nd-help p { margin: 0 0 calc(10px * var(--p)); line-height: 1.4; color: #ccc; }
@@ -401,6 +427,15 @@
         .nd-sum ol { margin: calc(4px * var(--p)) 0 0; padding-left: calc(18px * var(--p)); color: #eee; }
         .nd-sum ol li { margin-bottom: calc(6px * var(--p)); }
         .nd-sum ol small { display: block; color: #999; }
+        /* Revive setting at the top of Going offline; flashes while revives are on for everyone */
+        .nd-revive { margin: 0 0 calc(10px * var(--p)); color: #aaa; }
+        .nd-revive b { color: #ddd; }
+        .nd-revive .nd-revive-on { display: flex; justify-content: space-between; align-items: baseline; gap: calc(8px * var(--p)); flex-wrap: wrap; padding: calc(7px * var(--p)) calc(10px * var(--p)); border-radius: calc(6px * var(--p));
+            border: 1px solid #c33; background: #3a1414 !important; color: #ff8a8a !important; font-weight: bold;
+            animation: nd-revive-flash 1.1s ease-in-out infinite; }
+        .nd-revive .nd-revive-on a { font-weight: normal; color: #ffd0d0 !important; text-decoration: underline !important; }
+        @keyframes nd-revive-flash { 0%, 100% { background: #3a1414; box-shadow: none; } 50% { background: #6a1c1c; box-shadow: 0 0 10px 2px rgba(220,60,60,0.55); } }
+        @media (prefers-reduced-motion: reduce) { .nd-revive .nd-revive-on { animation: none; } }
         .nd-test { font-size: calc(11px * var(--p)); color: #e0b030; margin: calc(-4px * var(--p)) 0 calc(8px * var(--p)); }
         /* Admin panel: one card per request waiting for an admin */
         .nd-adm { list-style: none; margin: 0; padding: 0; max-height: calc(360px * var(--p)); overflow-y: auto; }
@@ -583,6 +618,7 @@
     offPanel.className = 'nd-panel';
     offPanel.innerHTML = `
         <h3>Going offline <button type="button" class="nd-x" id="nd-off-close" aria-label="Close" title="Close">\u00D7</button></h3>
+        <div class="nd-revive" id="nd-off-revive"></div>
         <div class="nd-section">
             <label>Your requests <a class="nd-sheet" id="nd-off-sheet" target="_blank" rel="noopener" style="display: none">Open sheet</a></label>
             <div id="nd-off-log"></div>
@@ -715,9 +751,10 @@
         return text.length > 1 ? ' nd-l' + Math.min(3, text.length) : '';
     }
 
-    // Order around the arc: built-ins, the user's shortcuts, +, Settings
+    // Order around the arc: built-ins, the groups, the user's shortcuts, +, Settings
     function fanItems() {
         const items = BUILT_IN.map(b => ({ ...b, kind: b.kind || 'link' }));
+        GROUPS.forEach(g => items.push({ id: 'g-' + g.id, label: g.label, icon: g.icon, kind: 'group', group: g }));
         shortcuts.forEach((s, i) => items.push({ id: 'sc' + i, label: s.name, url: s.url, kind: 'link', shortcut: s }));
         items.push({ id: 'add', label: 'Add', icon: 'plus', kind: 'add' });
         items.push({ id: 'settings', label: 'Settings', icon: 'gear', kind: 'settings' });
@@ -746,16 +783,53 @@
                 badge.className = 'nd-badge';
                 el.appendChild(badge);
             }
+            if (item.kind === 'group') {
+                el.dataset.group = item.group.id;
+                el.setAttribute('aria-expanded', 'false');
+            }
             root.appendChild(el);
+            // A group's secondary bubbles: links, hidden until the group is tapped
+            if (item.kind === 'group') {
+                item.group.links.forEach(l => {
+                    const a = document.createElement('a');
+                    a.className = 'nd-node nd-child nd-subnode';
+                    a.dataset.kind = 'link';
+                    a.dataset.parent = item.group.id;
+                    a.title = l.label;
+                    a.setAttribute('aria-label', l.label);
+                    a.tabIndex = -1;
+                    a.href = l.url;
+                    if (newTab) { a.target = '_blank'; a.rel = 'noopener'; }
+                    a.innerHTML = svg(l.icon);
+                    root.appendChild(a);
+                });
+            }
         }
         renderBadges();
         if (isOpen) layoutFan();
+        setGroup(openGroup);
+    }
+
+    // The group whose secondary bubbles are showing (one at a time), or null
+    let openGroup = null;
+    function setGroup(id) {
+        openGroup = id;
+        root.querySelectorAll('.nd-subnode').forEach(e => {
+            const on = isOpen && e.dataset.parent === id;
+            e.classList.toggle('nd-sub-show', on);
+            e.tabIndex = on ? 0 : -1;
+        });
+        root.querySelectorAll('.nd-child[data-kind=group]').forEach(e => {
+            const on = e.dataset.group === id;
+            e.classList.toggle('nd-group-open', on);
+            e.setAttribute('aria-expanded', String(on));
+        });
     }
 
     // Spread the children on arcs centred on the direction from the main node to the middle
     // of the screen, so the fan always opens inwards (away from the nearest edges)
     function layoutFan() {
-        const children = Array.from(root.querySelectorAll('.nd-child'));
+        const children = Array.from(root.querySelectorAll('.nd-child:not(.nd-subnode)'));
         const toward = Math.atan2(window.innerHeight / 2 - centreY, window.innerWidth / 2 - centreX);
         let placed = 0;
         let ring = 0;
@@ -771,10 +845,27 @@
                 el.style.setProperty('--dx', (Math.cos(a) * radius).toFixed(1) + 'px');
                 el.style.setProperty('--dy', (Math.sin(a) * radius).toFixed(1) + 'px');
                 el.style.transitionDelay = (i * 0.025) + 's';
+                if (el.dataset.group) layoutSubs(el.dataset.group, a, radius);
             }
             placed += count;
             ring++;
         }
+    }
+    // A group's bubbles: a short arc SUB_STEP further out, on the group's own direction. They
+    // grow out of the group's bubble (--px/--py)
+    function layoutSubs(id, angle, radius) {
+        const subs = Array.from(root.querySelectorAll('.nd-subnode[data-parent="' + id + '"]'));
+        const r = radius + SUB_STEP;
+        const step = ARC_GAP / r;
+        const start = angle - (step * (subs.length - 1)) / 2;
+        subs.forEach((el, i) => {
+            const a = start + step * i;
+            el.style.setProperty('--px', (Math.cos(angle) * radius).toFixed(1) + 'px');
+            el.style.setProperty('--py', (Math.sin(angle) * radius).toFixed(1) + 'px');
+            el.style.setProperty('--dx', (Math.cos(a) * r).toFixed(1) + 'px');
+            el.style.setProperty('--dy', (Math.sin(a) * r).toFixed(1) + 'px');
+            el.style.transitionDelay = (i * 0.03) + 's';
+        });
     }
 
     function setOpen(open) {
@@ -782,13 +873,15 @@
         if (open) { layoutFan(); refreshMessages(false); }
         root.classList.toggle('nd-open', open);
         mainBtn.setAttribute('aria-expanded', String(open));
-        root.querySelectorAll('.nd-child').forEach(el => { el.tabIndex = open ? 0 : -1; });
+        root.querySelectorAll('.nd-child:not(.nd-subnode)').forEach(el => { el.tabIndex = open ? 0 : -1; });
+        setGroup(null);
     }
 
     root.addEventListener('click', (e) => {
         const child = e.target.closest('.nd-child');
         if (!child) return;
         const kind = child.dataset.kind;
+        if (kind === 'group') { setGroup(openGroup === child.dataset.group ? null : child.dataset.group); return; }
         if (kind === 'settings') { setOpen(false); openSettings(); }
         else if (kind === 'messages') { setOpen(false); openMessages(); }
         else if (kind === 'offline') { setOpen(false); openOffline(); }
@@ -1745,6 +1838,43 @@
         loadAdmin();
     }
 
+    // The player's revive setting, from Torn (v2 user/profile, needs a Limited key for the real
+    // value). One call each time the panel opens; never more than one at a time
+    let reviveBusy = false;
+    function showRevive(setting, error) {
+        const box = offPanel.querySelector('#nd-off-revive');
+        box.textContent = '';
+        if (setting === 'Everyone') {
+            const on = el('div', 'nd-revive-on', 'Revives are ON ');
+            const a = el('a', '', 'Open hospital page to change');
+            a.href = HOSPITAL_URL;
+            on.appendChild(a);
+            box.appendChild(on);
+            return;
+        }
+        box.append('Revive setting: ');
+        if (setting === 'No one') box.appendChild(el('b', '', 'off'));
+        else if (setting === 'Friends & faction') box.appendChild(el('b', '', 'friends and faction only'));
+        else box.appendChild(el('b', '', error || (setting === 'Unknown' ? 'unknown (needs a Limited key)' : 'checking...')));
+    }
+    async function loadRevive() {
+        if (!apiKey) { showRevive(null, 'add your API key in Settings'); return; }
+        if (reviveBusy) return;
+        reviveBusy = true;
+        showRevive(null);
+        try {
+            const res = await fetch('https://api.torn.com/v2/user/profile?comment=a1ryDash&key=' + encodeURIComponent(apiKey));
+            const data = res.ok ? await res.json() : null;
+            if (!data) showRevive(null, 'unknown (Torn HTTP ' + res.status + ')');
+            else if (data.error) showRevive(null, 'unknown (Torn error ' + data.error.code + ')');
+            else showRevive(data.profile && data.profile.revive_setting);
+        } catch (e) {
+            showRevive(null, 'unknown (network)');
+        } finally {
+            reviveBusy = false;
+        }
+    }
+
     function openOffline() {
         offHours.value = Math.min(OFFLINE_HOURS_MAX, Math.max(1, Number(load('off_hours', 8)) || 8));
         showHours();
@@ -1755,6 +1885,7 @@
         renderOffLog();
         openPanel(offPanel);
         loadOffline();
+        loadRevive();
     }
 
     // -------------------------------------------------------------------

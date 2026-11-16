@@ -20,7 +20,10 @@ towards the middle of the screen:
   optional questions one at a time (one choice, several choices or a written answer; options
   one per line), a final check, and **Confirm and send**. Messages get an ID like `1116_01`
   (TCT date and a number) and go to all members.
-- **Going offline** (bed): set how many hours you'll be away (1-12) and pick one request:
+- **Going offline** (bed): the top shows your revive setting (from Torn, with your key): *off*
+  or *friends and faction only*, or, if revives are on for everyone, a flashing link to the
+  hospital page so you can change it before you go. Set how many hours you'll be away (1-12)
+  and pick one request:
   **Request a bounty** ($100k-$1m), or **Request a merc hit**: regular ($3m) or Stricken
   ($3.5m). The request goes to the faction sheet (Offline tab, with the type of hit and a link
   to Torn's add-bounty page or your profile) for an officer to action. You can cancel it until
@@ -34,10 +37,12 @@ towards the middle of the screen:
   yet*). **Mark placed** records it as done (status "placed by" you); it's a separate step on
   purpose. Merc orders use a Public API key you save in the Admin panel itself, separate from
   the key in Settings; it is sent only to C39.
+- **War** (crossed swords) and **Items** (box): tap one and two more bubbles pop out beside it.
+  War: **Faction war** (flag) and **Chain** (chain). Items: **Items** (backpack) and **Faction
+  armory** (locker). Tap the group again, or anything else, to fold them away. These are fixed.
 - **Your shortcuts**: one button per link, showing its icon: up to 3 letters (the first
-  letter of its name if you don't choose). **War** (crossed swords) and **Chain** (a chain) are
-  there by default; remove them in Settings if you don't want them.
-- **+**: add a shortcut. Tap a suggestion (War, Chain, Hospital, Item, Gym; their icons are swords, a chain, Hos, Itm, Gym), or give a name, an
+  letter of its name if you don't choose).
+- **+**: add a shortcut. Tap a suggestion (Hospital, Gym), or give a name, an
   icon of up to 3 letters (e.g. `Itm`) and a URL: a full `https://` link, or a Torn path such as
   `/gym.php`. **Current page URL** fills in the page you're on.
 - **Settings** (gear):
