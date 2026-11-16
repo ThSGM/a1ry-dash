@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         a1ry Dash
 // @namespace    https://github.com/ThSGM/a1ry-dash
-// @version      0.22
+// @version      0.26
 // @description  A movable round launcher for Torn: tap it for a fan of shortcuts (faction messages, settings and your own links). Desktop, mobile and TornPDA
 // @author       ThSGM
 // @match        https://www.torn.com/*
@@ -36,13 +36,20 @@
 //              (no API key is sent anywhere else). It can be cancelled until
 //              an officer changes its status. The 5 latest are listed on top.
 //              Admins (player IDs on the sheet's Admins tab, checked by the
-//              server) also get an Admin button: every request not yet
+//              server) also get an Open sheet link (read-only view of the
+//              Offline tab) and an Admin button: every request not yet
 //              actioned, with Place bounty (Torn's add-bounty page for that
 //              player), Place merc (shows the C39 request, a toggle to confirm;
 //              MERC_LIVE = false: test only, nothing is sent) and Mark placed
 //              (separate on purpose). Merc orders use the admin's own Public
 //              key, saved in the Admin panel (a1ry_dash_admin_key), not the
 //              Settings key
+//              Admins also get an Admin button under Messages: open messages
+//              (Close now, two taps) and Create message: title, body, closes
+//              in 1-168 h or never, then optional questions one screen each
+//              (type, text, options one per line; Back / Next question /
+//              Finish), a check screen, then Confirm and send. The server
+//              gives the ID, MMDD_XX (TCT date + number)
 //   <yours>    one node per shortcut; its icon is up to 3 letters (the first
 //              letter of its name by default). War (crossed swords) and Chain
 //              (a chain) are added once on first run, and can be removed
@@ -90,7 +97,7 @@
     if (document.getElementById('a1ry-dash')) return;
 
     // Keep in step with @version above (GM_info isn't available in every userscript host)
-    const SCRIPT_VERSION = '0.22';
+    const SCRIPT_VERSION = '0.26';
     const KEY = 'a1ry_dash_';
     // Settings' Update button: the script's Greasy Fork page, whose Install button updates it.
     // Empty = greyed out
@@ -269,8 +276,9 @@
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
         .nd-panel, .nd-panel * { box-sizing: border-box; }
         .nd-panel.nd-show { display: block; }
-        .nd-panel h3 { margin: 0 0 calc(10px * var(--p)); font-size: calc(14px * var(--p)); color: #fff !important; display: flex; justify-content: space-between; align-items: baseline; }
-        .nd-panel h3 small { font-size: calc(10px * var(--p)); color: #777; font-weight: normal; }
+        .nd-panel h3 { margin: 0 0 calc(10px * var(--p)); font-size: calc(11.5px * var(--p)); text-transform: uppercase; letter-spacing: 0.06em;
+            color: #fff !important; display: flex; justify-content: space-between; align-items: center; }
+        .nd-panel h3 small { font-size: calc(10px * var(--p)); color: #777; font-weight: normal; text-transform: none; letter-spacing: 0; }
         .nd-panel label { display: block; margin: calc(8px * var(--p)) 0 calc(3px * var(--p)); color: #aaa; font-size: calc(12px * var(--p)); }
         .nd-panel input[type="text"], .nd-panel input[type="url"] { width: 100%; padding: calc(7px * var(--p)) calc(8px * var(--p)); font-size: 16px; /* calc(16px * var(--p)) stops iOS zooming in */
             background: #222 !important; color: #fff !important; border: 1px solid #555 !important; border-radius: calc(4px * var(--p)); }
@@ -381,6 +389,18 @@
         .nd-off-log .nd-btn { flex: 0 0 auto; padding: calc(2px * var(--p)) calc(8px * var(--p)); font-size: calc(11px * var(--p)); background: #6a2d2d !important; }
         .nd-panel input[type="password"] { width: 100%; padding: calc(7px * var(--p)) calc(8px * var(--p)); font-size: 16px; font-family: "Courier New", Courier, monospace;
             background: #222 !important; color: #fff !important; border: 1px solid #555 !important; border-radius: calc(4px * var(--p)); }
+        .nd-sheet { float: right; color: #8ab4f8 !important; font-size: calc(11px * var(--p)); }
+        /* Messages admin */
+        .nd-ta { width: 100%; padding: calc(6px * var(--p)) calc(8px * var(--p)); font-size: 16px; resize: vertical; font-family: inherit;
+            background: #222 !important; color: #fff !important; border: 1px solid #555 !important; border-radius: calc(4px * var(--p)); }
+        .nd-ma-open li .nd-btn { background: #6a2d2d !important; }
+        .nd-sum { border: 1px solid #333; border-radius: calc(6px * var(--p)); background: #1a1a1a !important; padding: calc(8px * var(--p)); }
+        .nd-sum .nd-sum-k { color: #888; font-size: calc(11px * var(--p)); margin-top: calc(8px * var(--p)); }
+        .nd-sum .nd-sum-k:first-child { margin-top: 0; }
+        .nd-sum .nd-sum-v { color: #eee; white-space: pre-wrap; word-wrap: break-word; }
+        .nd-sum ol { margin: calc(4px * var(--p)) 0 0; padding-left: calc(18px * var(--p)); color: #eee; }
+        .nd-sum ol li { margin-bottom: calc(6px * var(--p)); }
+        .nd-sum ol small { display: block; color: #999; }
         .nd-test { font-size: calc(11px * var(--p)); color: #e0b030; margin: calc(-4px * var(--p)) 0 calc(8px * var(--p)); }
         /* Admin panel: one card per request waiting for an admin */
         .nd-adm { list-style: none; margin: 0; padding: 0; max-height: calc(360px * var(--p)); overflow-y: auto; }
@@ -458,6 +478,7 @@
             <p><b>Moving it.</b> Drag the martini anywhere. It stays near the screen corner you put it by.</p>
             <p><b>Shortcuts.</b> Tap + in the fan to add one: pick a suggestion, or give a name, up to 3 letters for its icon, and a link. Remove them here in Settings.</p>
             <p><b>Faction messages.</b> Tap Messages in the fan. A red number shows new ones, and the martini flashes while a message is waiting for your answers. You can change your answers until the message closes.</p>
+            <p><b>Admins.</b> Faction admins (listed in the sheet) get an Admin button under Messages, to send a new message with optional questions or close one early, and one under Going offline, to action requests.</p>
             <p><b>Going offline.</b> Tap the bed, set how many hours you'll be away and pick one: a bounty on yourself, a merc hit or a Stricken merc hit. Your request goes to the faction sheet for an officer to action. You can cancel it until they do. Faction admins also see an Admin button there, listing the requests still waiting.</p>
             <p><b>Your API key.</b> It's kept in this browser. For faction messages, the key is sent once to the faction's a1ry Dash server, which asks Torn who you are and checks you're in Naughty Souls. The server doesn't keep the key. Your answers go to a faction Google Sheet with your name and player ID.</p>
         </div>
@@ -492,15 +513,78 @@
     msgPanel.className = 'nd-panel nd-wide';
     msgPanel.innerHTML = `
         <h3>Faction messages <button type="button" class="nd-x" id="nd-msg-close" aria-label="Close" title="Close">\u00D7</button></h3>
-        <div id="nd-msg-list"></div>`;
+        <div id="nd-msg-list"></div>
+        <div class="nd-row" id="nd-msg-admin-row" style="display: none"><button type="button" class="nd-btn" id="nd-msg-admin">Admin</button></div>`;
     document.body.appendChild(msgPanel);
+
+    // Messages admin: open messages (Close now) and a step-by-step Create message
+    const mAdmPanel = document.createElement('div');
+    mAdmPanel.className = 'nd-panel nd-wide';
+    mAdmPanel.innerHTML = `
+        <h3><span id="nd-ma-title">Admin: messages</span> <button type="button" class="nd-x" id="nd-ma-close" aria-label="Back" title="Back">\u00D7</button></h3>
+        <div id="nd-ma-home">
+            <label>Open messages <a class="nd-sheet" id="nd-ma-sheet" target="_blank" rel="noopener" style="display: none">Open sheet</a></label>
+            <div id="nd-ma-open"></div>
+            <div class="nd-row">
+                <button type="button" class="nd-btn" id="nd-ma-back">Back</button>
+                <button type="button" class="nd-btn nd-primary" id="nd-ma-new">Create message</button>
+            </div>
+        </div>
+        <div id="nd-ma-msg" style="display: none">
+            <div class="nd-hint" id="nd-ma-id"></div>
+            <label for="nd-ma-tt">Title</label>
+            <input type="text" id="nd-ma-tt" maxlength="100" autocomplete="off">
+            <label for="nd-ma-body">Message</label>
+            <textarea id="nd-ma-body" class="nd-ta" maxlength="1500" rows="5"></textarea>
+            <label for="nd-ma-hours">Closes in: <b id="nd-ma-hours-val"></b></label>
+            <input type="range" id="nd-ma-hours" min="1" max="168" step="1">
+            <label class="nd-check"><input type="checkbox" id="nd-ma-never"> No expiry</label>
+            <div class="nd-err" id="nd-ma-msg-err"></div>
+            <div class="nd-row">
+                <button type="button" class="nd-btn" id="nd-ma-msg-back">Back</button>
+                <button type="button" class="nd-btn" id="nd-ma-addq">Add question</button>
+                <button type="button" class="nd-btn nd-primary" id="nd-ma-submit">Submit</button>
+            </div>
+        </div>
+        <div id="nd-ma-q" style="display: none">
+            <label>Type</label>
+            <label class="nd-check"><input type="radio" name="nd-ma-type" value="single"> One choice</label>
+            <label class="nd-check"><input type="radio" name="nd-ma-type" value="multi"> Several choices</label>
+            <label class="nd-check"><input type="radio" name="nd-ma-type" value="text"> Written answer</label>
+            <label for="nd-ma-qt">Question</label>
+            <input type="text" id="nd-ma-qt" maxlength="300" autocomplete="off">
+            <div id="nd-ma-opts-box">
+                <label for="nd-ma-opts">Options (one per line)</label>
+                <textarea id="nd-ma-opts" class="nd-ta" rows="4"></textarea>
+            </div>
+            <button type="button" class="nd-btn nd-small" id="nd-ma-delq">Remove this question</button>
+            <div class="nd-err" id="nd-ma-q-err"></div>
+            <div class="nd-row">
+                <button type="button" class="nd-btn" id="nd-ma-q-back">Back</button>
+                <button type="button" class="nd-btn" id="nd-ma-nextq">Next question</button>
+                <button type="button" class="nd-btn nd-primary" id="nd-ma-finish">Finish</button>
+            </div>
+        </div>
+        <div id="nd-ma-review" style="display: none">
+            <div id="nd-ma-sum"></div>
+            <div class="nd-err" id="nd-ma-rev-err"></div>
+            <div class="nd-row">
+                <button type="button" class="nd-btn" id="nd-ma-rev-back">Back</button>
+                <button type="button" class="nd-btn nd-primary" id="nd-ma-send">Confirm and send</button>
+            </div>
+        </div>
+        <div id="nd-ma-done" style="display: none">
+            <div class="nd-status nd-ok" id="nd-ma-done-text"></div>
+            <div class="nd-row"><button type="button" class="nd-btn nd-primary" id="nd-ma-ok">OK</button></div>
+        </div>`;
+    document.body.appendChild(mAdmPanel);
 
     const offPanel = document.createElement('div');
     offPanel.className = 'nd-panel';
     offPanel.innerHTML = `
         <h3>Going offline <button type="button" class="nd-x" id="nd-off-close" aria-label="Close" title="Close">\u00D7</button></h3>
         <div class="nd-section">
-            <label>Your requests</label>
+            <label>Your requests <a class="nd-sheet" id="nd-off-sheet" target="_blank" rel="noopener" style="display: none">Open sheet</a></label>
             <div id="nd-off-log"></div>
         </div>
         <div class="nd-section" id="nd-off-form">
@@ -536,7 +620,7 @@
             <div class="nd-status" id="nd-adm-key-status"></div>
             <div class="nd-hint">Separate from the key in Settings. Kept in this browser and sent only to C39 (ultimata.net) when you order a merc hit.</div>
         </div>
-        <div class="nd-section" id="nd-adm-list"></div>
+        <div class="nd-section"><label>Waiting for an admin <a class="nd-sheet" id="nd-adm-sheet" target="_blank" rel="noopener" style="display: none">Open sheet</a></label><div id="nd-adm-list"></div></div>
         <div id="nd-adm-confirm" style="display: none">
             <div class="nd-adm-what" id="nd-adm-what"></div>
             <label>Request that would be sent</label>
@@ -720,6 +804,7 @@
     document.addEventListener('keydown', (e) => {
         if (e.key !== 'Escape') return;
         if (msgPanel.classList.contains('nd-show')) closePanel(msgPanel);
+        else if (mAdmPanel.classList.contains('nd-show')) openMessages();
         else if (offPanel.classList.contains('nd-show')) closePanel(offPanel);
         else if (admPanel.classList.contains('nd-show')) openOffline();
         else if (helpPanel.classList.contains('nd-show')) openSettings();
@@ -776,6 +861,7 @@
         closePanel(helpPanel);
         closePanel(offPanel);
         closePanel(admPanel);
+        closePanel(mAdmPanel);
         panel.classList.add('nd-show');
     }
     function closePanel(panel) { panel.classList.remove('nd-show'); }
@@ -1088,14 +1174,14 @@
         if (msgPanel.classList.contains('nd-show') && !msgs) renderMessages();
         try {
             const r = await withSession({ a: 'messages' });
-            msgs = { time: Date.now(), list: r.messages || [], error: null };
+            msgs = { time: Date.now(), list: r.messages || [], admin: !!r.admin, error: null };
             // Only remember ids still on the server, so the seen list doesn't grow forever
             const keep = {};
             msgs.list.forEach(m => { if (seen[m.id]) keep[m.id] = true; });
             if (Object.keys(keep).length !== Object.keys(seen).length) { seen = keep; save('seen', seen); }
         } catch (e) {
             // Keep the last list so a network blip doesn't empty the panel
-            msgs = { time: Date.now(), list: (msgs && msgs.list) || [], error: { code: e.code || 'net', text: e.message } };
+            msgs = { time: Date.now(), list: (msgs && msgs.list) || [], admin: !!(msgs && msgs.admin), error: { code: e.code || 'net', text: e.message } };
         } finally {
             msgLoading = false;
             save('msgs_busy', 0);
@@ -1165,6 +1251,7 @@
     function renderMessages() {
         msgDirty = false;
         msgList.textContent = '';
+        msgPanel.querySelector('#nd-msg-admin-row').style.display = apiKey && msgs && msgs.admin ? '' : 'none';
         if (!apiKey) {
             const p = el('div', 'nd-status nd-warn', 'Add your API key in Settings to see faction messages.');
             const b = el('button', 'nd-btn', 'Open Settings');
@@ -1382,9 +1469,19 @@
         return d.getUTCDate() + ' ' + mon + ' ' + String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0') + ' TCT';
     }
 
+    // Show an "Open sheet" link for a docs.google.com URL from the server, else hide it
+    function setSheetLink(a, url) {
+        const ok = typeof url === 'string' && url.startsWith('https://docs.google.com/');
+        a.style.display = ok ? '' : 'none';
+        if (ok) a.href = url; else a.removeAttribute('href');
+    }
+
     function renderOffLog() {
         offLog.textContent = '';
-        offPanel.querySelector('#nd-off-admin-row').style.display = offData && offData.admin ? '' : 'none';
+        // Admins only: the Admin button and a read-only link to the sheet's Offline tab
+        const isAdm = !!(offData && offData.admin);
+        offPanel.querySelector('#nd-off-admin-row').style.display = isAdm ? '' : 'none';
+        setSheetLink(offPanel.querySelector('#nd-off-sheet'), isAdm ? offData.sheet : '');
         if (!apiKey) {
             offLog.appendChild(el('div', 'nd-status nd-warn', 'Add your API key in Settings first.'));
             return;
@@ -1420,7 +1517,7 @@
     // Every server call here returns the fresh list
     async function offCall(params) {
         const r = await withSession(params);
-        offData = { list: r.requests || [], admin: !!r.admin, error: null };
+        offData = { list: r.requests || [], admin: !!r.admin, sheet: r.sheet || '', error: null };
         save('offline', offData);
         renderOffLog();
     }
@@ -1523,7 +1620,7 @@
 
     function admView(confirm) {
         admPanel.querySelector('#nd-adm-keybox').style.display = confirm ? 'none' : '';
-        admList.style.display = confirm ? 'none' : '';
+        admList.parentNode.style.display = confirm ? 'none' : '';
         admFoot.style.display = confirm ? 'none' : '';
         admConfirm.style.display = confirm ? '' : 'none';
     }
@@ -1574,6 +1671,7 @@
         const r = await withSession(params);
         admItems = r.items || [];
         admError = '';
+        setSheetLink(admPanel.querySelector('#nd-adm-sheet'), r.sheet);
         renderAdmin();
     }
     async function loadAdmin() {
@@ -1658,6 +1756,233 @@
         openPanel(offPanel);
         loadOffline();
     }
+
+    // -------------------------------------------------------------------
+    // 8d. Messages admin (admins only; the server checks every call). Steps: home (open
+    //     messages, Close now, Create message) -> msg (title, body, expiry) -> q (one screen
+    //     per question) -> review -> done. The draft lives in memory until it is sent
+    // -------------------------------------------------------------------
+    const MA_TYPE_LABEL = { single: 'One choice', multi: 'Several choices', text: 'Written answer' };
+    const maQ = (sel) => mAdmPanel.querySelector(sel);
+    const maHours = maQ('#nd-ma-hours');
+    const maNever = maQ('#nd-ma-never');
+    let maData = null;      // { open: [...], nextId } from the server
+    let maError = '';
+    let maDraft = null;     // { title, body, hours, never, questions: [{ type, text, opts }] }
+    let maQi = 0;           // the question being edited
+
+    function maStep(step, title) {
+        ['home', 'msg', 'q', 'review', 'done'].forEach(k => { maQ('#nd-ma-' + k).style.display = k === step ? '' : 'none'; });
+        maQ('#nd-ma-title').textContent = title;
+    }
+
+    // "2 d 6 h"
+    function hoursText(h) {
+        const d = Math.floor(h / 24);
+        const r = h % 24;
+        return d ? d + ' d' + (r ? ' ' + r + ' h' : '') : r + ' h';
+    }
+    function showMaHours() {
+        const h = Number(maHours.value);
+        maQ('#nd-ma-hours-val').textContent = maNever.checked ? 'never' : hoursText(h) + ' (' + tct(new Date(Date.now() + h * 36e5).toISOString()) + ')';
+        maHours.disabled = maNever.checked;
+    }
+    maHours.addEventListener('input', showMaHours);
+    maNever.addEventListener('change', showMaHours);
+
+    function renderMaHome() {
+        const box = maQ('#nd-ma-open');
+        box.textContent = '';
+        if (maError) box.appendChild(el('div', 'nd-status nd-bad', maError));
+        if (!maData) { box.appendChild(el('div', 'nd-empty', 'Loading...')); return; }
+        if (!maData.open.length) { box.appendChild(el('div', 'nd-empty', 'No open messages.')); return; }
+        const ul = el('ul', 'nd-list nd-ma-open');
+        maData.open.forEach(m => {
+            const li = el('li');
+            const t = el('span', '', m.title + ' ');
+            t.appendChild(el('small', '', m.id + (m.expires ? ', ' + timeLeft(m.expires) + ' left' : ', no expiry')));
+            li.appendChild(t);
+            const b = el('button', 'nd-btn', 'Close now');
+            b.type = 'button';
+            b.title = 'Close this message for answers now';
+            // Two taps: the first asks "Sure?"
+            b.addEventListener('click', () => {
+                if (b.dataset.sure) maCall({ a: 'admin_msg_close', id: m.id }, b).catch(() => { /* shown in the list */ });
+                else { b.dataset.sure = '1'; b.textContent = 'Sure?'; }
+            });
+            li.appendChild(b);
+            ul.appendChild(li);
+        });
+        box.appendChild(ul);
+    }
+    async function maCall(params, btn) {
+        if (btn) { btn.disabled = true; btn.textContent = '...'; }
+        try {
+            const r = await withSession(params);
+            maData = { open: r.open || [], nextId: r.nextId || '' };
+            setSheetLink(maQ('#nd-ma-sheet'), r.sheet);
+            maError = '';
+            if (params.a !== 'admin_msgs') refreshMessages(true);
+            return r;
+        } catch (e) {
+            maError = e.message;
+            if (params.a !== 'admin_msg_new') renderMaHome();
+            throw e;
+        } finally {
+            if (params.a !== 'admin_msg_new') renderMaHome();
+        }
+    }
+
+    // Message screen <-> draft
+    function maReadMsg() {
+        maDraft.title = maQ('#nd-ma-tt').value.trim();
+        maDraft.body = maQ('#nd-ma-body').value.trim();
+        maDraft.hours = Number(maHours.value);
+        maDraft.never = maNever.checked;
+    }
+    function maShowMsg() {
+        maQ('#nd-ma-id').textContent = 'ID: ' + (maData && maData.nextId ? maData.nextId : 'MMDD_XX') + ' (given automatically when sent)';
+        maQ('#nd-ma-tt').value = maDraft.title;
+        maQ('#nd-ma-body').value = maDraft.body;
+        maHours.value = maDraft.hours;
+        maNever.checked = maDraft.never;
+        maQ('#nd-ma-msg-err').textContent = '';
+        showMaHours();
+        maStep('msg', 'Create message');
+    }
+    function maMsgOk() {
+        maReadMsg();
+        if (!maDraft.title) { maQ('#nd-ma-msg-err').textContent = 'Give the message a title.'; return false; }
+        return true;
+    }
+
+    // Question screen <-> draft
+    function maReadQ() {
+        const q = maDraft.questions[maQi];
+        const t = mAdmPanel.querySelector('input[name="nd-ma-type"]:checked');
+        q.type = t ? t.value : '';
+        q.text = maQ('#nd-ma-qt').value.trim();
+        q.opts = maQ('#nd-ma-opts').value;
+    }
+    function maOptList(q) {
+        return q.opts.split('\n').map(x => x.trim()).filter(Boolean);
+    }
+    function maShowQ(i) {
+        maQi = i;
+        if (!maDraft.questions[i]) maDraft.questions[i] = { type: 'single', text: '', opts: '' };
+        const q = maDraft.questions[i];
+        mAdmPanel.querySelectorAll('input[name="nd-ma-type"]').forEach(r => { r.checked = r.value === q.type; });
+        maQ('#nd-ma-qt').value = q.text;
+        maQ('#nd-ma-opts').value = q.opts;
+        maQ('#nd-ma-opts-box').style.display = q.type === 'text' ? 'none' : '';
+        maQ('#nd-ma-q-err').textContent = '';
+        maStep('q', 'Question ' + (i + 1));
+    }
+    function maQOk() {
+        maReadQ();
+        const q = maDraft.questions[maQi];
+        const err = maQ('#nd-ma-q-err');
+        if (!q.type) { err.textContent = 'Pick a type.'; return false; }
+        if (!q.text) { err.textContent = 'Write the question.'; return false; }
+        if (q.type !== 'text') {
+            const n = maOptList(q).length;
+            if (n < 2) { err.textContent = 'Give at least 2 options, one per line.'; return false; }
+            if (n > 12) { err.textContent = 'At most 12 options.'; return false; }
+        }
+        return true;
+    }
+    mAdmPanel.querySelectorAll('input[name="nd-ma-type"]').forEach(r => r.addEventListener('change', () => {
+        maQ('#nd-ma-opts-box').style.display = r.value === 'text' && r.checked ? 'none' : '';
+    }));
+
+    function maShowReview() {
+        const sum = maQ('#nd-ma-sum');
+        sum.textContent = '';
+        const box = el('div', 'nd-sum');
+        const add = (k, v) => { box.append(el('div', 'nd-sum-k', k), el('div', 'nd-sum-v', v)); };
+        add('ID', (maData && maData.nextId ? maData.nextId : 'MMDD_XX') + ' (given when sent)');
+        add('Title', maDraft.title);
+        if (maDraft.body) add('Message', maDraft.body);
+        add('Closes', maDraft.never ? 'Never' : 'In ' + hoursText(maDraft.hours) + ', ' + tct(new Date(Date.now() + maDraft.hours * 36e5).toISOString()));
+        box.appendChild(el('div', 'nd-sum-k', maDraft.questions.length ? 'Questions' : 'No questions'));
+        if (maDraft.questions.length) {
+            const ol = el('ol');
+            maDraft.questions.forEach(q => {
+                const li = el('li', '', q.text);
+                li.appendChild(el('small', '', MA_TYPE_LABEL[q.type] + (q.type === 'text' ? '' : ': ' + maOptList(q).join(' | '))));
+                ol.appendChild(li);
+            });
+            box.appendChild(ol);
+        }
+        sum.appendChild(box);
+        maQ('#nd-ma-rev-err').textContent = '';
+        maStep('review', 'Check and send');
+    }
+
+    maQ('#nd-ma-new').addEventListener('click', () => {
+        maDraft = { title: '', body: '', hours: 48, never: false, questions: [] };
+        maShowMsg();
+    });
+    maQ('#nd-ma-msg-back').addEventListener('click', () => { maReadMsg(); maStep('home', 'Admin: messages'); });
+    maQ('#nd-ma-addq').addEventListener('click', () => { if (maMsgOk()) maShowQ(0); });
+    maQ('#nd-ma-submit').addEventListener('click', () => {
+        if (!maMsgOk()) return;
+        maDraft.questions = maDraft.questions.filter(q => q.text); // unfinished blanks are dropped
+        maShowReview();
+    });
+    maQ('#nd-ma-q-back').addEventListener('click', () => {
+        maReadQ();
+        if (maQi > 0) maShowQ(maQi - 1); else maShowMsg();
+    });
+    maQ('#nd-ma-nextq').addEventListener('click', () => {
+        if (!maQOk()) return;
+        if (maQi + 1 >= 10 && !maDraft.questions[maQi + 1]) { maQ('#nd-ma-q-err').textContent = 'At most 10 questions.'; return; }
+        maShowQ(maQi + 1);
+    });
+    maQ('#nd-ma-finish').addEventListener('click', () => {
+        if (!maQOk()) return;
+        maShowReview();
+    });
+    maQ('#nd-ma-delq').addEventListener('click', () => {
+        maDraft.questions.splice(maQi, 1);
+        if (maDraft.questions.length) maShowQ(Math.max(0, maQi - 1)); else maShowMsg();
+    });
+    maQ('#nd-ma-rev-back').addEventListener('click', () => {
+        if (maDraft.questions.length) maShowQ(maDraft.questions.length - 1); else maShowMsg();
+    });
+    const maSend = maQ('#nd-ma-send');
+    maSend.addEventListener('click', async () => {
+        if (maSend.disabled) return;
+        const d = {
+            title: maDraft.title, body: maDraft.body, hours: maDraft.never ? 0 : maDraft.hours,
+            questions: maDraft.questions.map(q => ({ type: q.type, text: q.text, options: q.type === 'text' ? [] : maOptList(q) })),
+        };
+        maSend.disabled = true;
+        maSend.textContent = 'Sending...';
+        try {
+            const r = await maCall({ a: 'admin_msg_new', d: JSON.stringify(d) });
+            maDraft = null;
+            maQ('#nd-ma-done-text').textContent = 'Sent as ' + r.id + '. Members will see it within a minute or so.';
+            maStep('done', 'Message sent');
+        } catch (e) {
+            maQ('#nd-ma-rev-err').textContent = e.message || 'Couldn\'t send it.';
+        } finally {
+            maSend.disabled = false;
+            maSend.textContent = 'Confirm and send';
+        }
+    });
+    maQ('#nd-ma-ok').addEventListener('click', () => { maStep('home', 'Admin: messages'); renderMaHome(); });
+    maQ('#nd-ma-back').addEventListener('click', openMessages);
+    maQ('#nd-ma-close').addEventListener('click', openMessages);
+
+    function openMsgAdmin() {
+        maError = '';
+        maStep('home', 'Admin: messages');
+        renderMaHome();
+        openPanel(mAdmPanel);
+        maCall({ a: 'admin_msgs' }).catch(() => { /* shown in the list */ });
+    }
+    msgPanel.querySelector('#nd-msg-admin').addEventListener('click', openMsgAdmin);
 
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') refreshMessages(false);

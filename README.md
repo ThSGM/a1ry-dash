@@ -14,13 +14,21 @@ towards the middle of the screen:
   `29h 5m`, ticking down each minute) on messages that have a deadline; tap one to open it below. The open
   message's row is highlighted. The martini flashes gold while a new message
   is waiting for your answers. Needs your API key in Settings.
+  **Admins** also get an **Admin** button here: the open messages (with **Close now** and an
+  **Open sheet** link to the sheet's Messages tab) and
+  **Create message**: title, message, when it closes (1-168 hours, or no expiry), then
+  optional questions one at a time (one choice, several choices or a written answer; options
+  one per line), a final check, and **Confirm and send**. Messages get an ID like `1116_01`
+  (TCT date and a number) and go to all members.
 - **Going offline** (bed): set how many hours you'll be away (1-12) and pick one request:
   **Request a bounty** ($100k-$1m), or **Request a merc hit**: regular ($3m) or Stricken
   ($3.5m). The request goes to the faction sheet (Offline tab, with the type of hit and a link
   to Torn's add-bounty page or your profile) for an officer to action. You can cancel it until
   they do. Your 5 latest requests are listed at the top with their status.
 
-  **Admin** (only for player IDs on the sheet's Admins tab): every request not yet actioned.
+  **Admin** (only for player IDs on the sheet's Admins tab, who also get an **Open sheet** link
+  to a read-only view of the Offline tab): every request not yet actioned, with an **Open
+  sheet** link to the Offline tab in the editor.
   **Place bounty** opens Torn's add-bounty page for that player. **Place merc** shows the
   request it would send to the C39 mercs and a toggle to confirm (*testing: nothing is sent
   yet*). **Mark placed** records it as done (status "placed by" you); it's a separate step on
