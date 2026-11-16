@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         a1ry Dash
 // @namespace    https://github.com/ThSGM/a1ry-dash
-// @version      0.17
+// @version      0.22
 // @description  A movable round launcher for Torn: tap it for a fan of shortcuts (faction messages, settings and your own links). Desktop, mobile and TornPDA
 // @author       ThSGM
 // @match        https://www.torn.com/*
@@ -30,10 +30,24 @@
 //              chosen message below it (its title and time left are on its
 //              highlighted row, not repeated above the message).
 //              The martini flashes while a new message waits for answers
-//   <yours>    one node per shortcut you added; its icon is up to 3 letters
-//              (the first letter of its name by default)
+//   Offline    (bed) going offline: pick 1-12 hours and one request: a
+//              bounty on yourself, a merc hit or a Stricken merc hit. It goes
+//              to the faction sheet's Offline tab for an officer to action
+//              (no API key is sent anywhere else). It can be cancelled until
+//              an officer changes its status. The 5 latest are listed on top.
+//              Admins (player IDs on the sheet's Admins tab, checked by the
+//              server) also get an Admin button: every request not yet
+//              actioned, with Place bounty (Torn's add-bounty page for that
+//              player), Place merc (shows the C39 request, a toggle to confirm;
+//              MERC_LIVE = false: test only, nothing is sent) and Mark placed
+//              (separate on purpose). Merc orders use the admin's own Public
+//              key, saved in the Admin panel (a1ry_dash_admin_key), not the
+//              Settings key
+//   <yours>    one node per shortcut; its icon is up to 3 letters (the first
+//              letter of its name by default). War (crossed swords) and Chain
+//              (a chain) are added once on first run, and can be removed
 //   +          add a shortcut: tap a suggestion (War, Chain, Hospital, Item,
-//              Gym, with icons War, Chn, Hos, Itm, Gym), or give a name, an icon and a URL (a full https:// link
+//              Gym, with icons swords, chain, Hos, Itm, Gym), or give a name, an icon and a URL (a full https:// link
 //              or a Torn path such as /factions.php)
 //   Settings   Limited API key (Save checks it), size, links in a new tab,
 //              remove shortcuts, reset position, Help, Update
@@ -76,7 +90,7 @@
     if (document.getElementById('a1ry-dash')) return;
 
     // Keep in step with @version above (GM_info isn't available in every userscript host)
-    const SCRIPT_VERSION = '0.17';
+    const SCRIPT_VERSION = '0.22';
     const KEY = 'a1ry_dash_';
     // Settings' Update button: the script's Greasy Fork page, whose Install button updates it.
     // Empty = greyed out
@@ -93,15 +107,27 @@
     const MSG_STALE_MS = 60 * 1000;      // refetch messages when the copy is older than this
     const MSG_BUSY_MS = 30 * 1000;      // another tab's fetch counts as running for this long
 
+    // Going offline: what each request costs the faction (shown next to the choice)
+    const OFFLINE_PRICE = { bounty: '$100k-$1m', merc: '$3m', stricken: '$3.5m' };
+    // Admin panel: Place merc would send this request to C39 (ultimata.net), as their "C39 Merc
+    // Requests" script does: POST {key, userId, isStricken}. While MERC_LIVE is false nothing is
+    // sent; the confirm screen shows the request and says it was a test
+    const MERC_LIVE = false;
+    const MERC_URL = 'https://ultimata.net/api/v1/requestmerc';
+    const BOUNTY_URL = 'https://www.torn.com/bounties.php?p=add&XID=';
+    const OFFLINE_HOURS_MAX = 12;
+
     // Built-in nodes. Settings and + are added after these and the user's shortcuts
     const BUILT_IN = [
         { id: 'messages', label: 'Messages', icon: 'mail', kind: 'messages' },
+        { id: 'offline', label: 'Going offline', icon: 'bed', kind: 'offline' },
     ];
 
-    // Suggested shortcuts, offered at the top of the Add panel (one tap adds one)
+    // Suggested shortcuts, offered at the top of the Add panel (one tap adds one). `sym` draws
+    // an ICONS picture instead of the letters; `isDefault` ones are added once on first run
     const SUGGESTED = [
-        { name: 'War', icon: 'War', url: 'https://www.torn.com/factions.php?step=your&type=1#/war/rank' },
-        { name: 'Chain', icon: 'Chn', url: 'https://www.torn.com/factions.php?step=your&type=1#/war/chain' },
+        { name: 'War', icon: 'War', sym: 'swords', isDefault: true, url: 'https://www.torn.com/factions.php?step=your&type=1#/war/rank' },
+        { name: 'Chain', icon: 'Chn', sym: 'chain', isDefault: true, url: 'https://www.torn.com/factions.php?step=your&type=1#/war/chain' },
         { name: 'Hospital', icon: 'Hos', url: 'https://www.torn.com/hospitalview.php' },
         { name: 'Item', icon: 'Itm', url: 'https://www.torn.com/item.php' },
         { name: 'Gym', icon: 'Gym', url: 'https://www.torn.com/gym.php' },
@@ -143,16 +169,32 @@
     // The last check of the saved key: { text, state: 'ok'|'warn'|'bad' }
     let apiStatus = load('api_status', null);
     if (!Array.isArray(shortcuts)) shortcuts = [];
-    // 0.12 renamed the suggestions' icons (W -> War, ...): update shortcuts added from them
+    // 0.12 renamed the suggestions' icons (W -> War, ...) and 0.18 gave War and Chain pictures:
+    // update shortcuts added from a suggestion that still have its letters
     function upgradeIcons() {
         let changed = false;
         shortcuts.forEach(sc => {
-            const g = SUGGESTED.find(x => x.url === sc.url && x.name === sc.name);
-            if (g && sc.icon === g.icon.charAt(0)) { sc.icon = g.icon; changed = true; }
+            const g = SUGGESTED.find(x => x.url === sc.url);
+            if (!g) return;
+            if (sc.name === g.name && sc.icon === g.icon.charAt(0)) { sc.icon = g.icon; changed = true; }
+            if (g.sym && !sc.sym && (!sc.icon || sc.icon === g.icon || sc.icon === g.icon.charAt(0))) {
+                sc.sym = g.sym; changed = true;
+            }
         });
         if (changed) save('shortcuts', shortcuts);
     }
     upgradeIcons();
+    // Default shortcuts (War, Chain): added once, in front, unless already there. Removing one
+    // later sticks, because a1ry_dash_defaults remembers this ran
+    function addDefaults() {
+        if (load('defaults', 0) >= 1) return;
+        const have = new Set(shortcuts.map(s => s.url));
+        const add = SUGGESTED.filter(g => g.isDefault && !have.has(g.url))
+            .map(g => ({ name: g.name, url: g.url, icon: g.icon, sym: g.sym }));
+        if (add.length) { shortcuts = add.concat(shortcuts); save('shortcuts', shortcuts); }
+        save('defaults', 1);
+    }
+    addDefaults();
     // Position: { x: 'left'|'right', xv, y: 'top'|'bottom', yv }
     let pos = load('pos', { x: 'right', xv: 16, y: 'bottom', yv: 120 });
     // Faction messages. session: the server's login token { token, id, name } (never the key).
@@ -173,6 +215,14 @@
         reply: '<path d="M10 7l-5 5 5 5"/><path d="M5 12h9a5 5 0 0 1 5 5v2"/>',
         gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/>',
         plus: '<path d="M12 5v14M5 12h14"/>',
+        // A bed: headboard, mattress, foot, a pillow and a blanket
+        bed: '<path d="M3 6v13M3 15h18v4"/><path d="M10 15v-4h8a3 3 0 0 1 3 3v1"/><circle cx="6.5" cy="12" r="1.8"/>',
+        // Two crossed swords: blade, guard, grip and pommel each
+        swords: '<path d="M3 3l13 13M14 18l4-4M17 17l2.5 2.5"/><circle cx="20.5" cy="20.5" r="1"/>' +
+            '<path d="M21 3L8 16M6 14l4 4M7 17l-2.5 2.5"/><circle cx="3.5" cy="20.5" r="1"/>',
+        // A chain: two links end to end, joined by a third seen edge-on
+        chain: '<g transform="rotate(-45 12 12)"><rect x="0.5" y="8.5" width="10" height="7" rx="3.5"/>' +
+            '<rect x="13.5" y="8.5" width="10" height="7" rx="3.5"/><path d="M7 12h10"/></g>',
     };
     function svg(name) {
         return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
@@ -277,6 +327,7 @@
         .nd-help b { color: #fff; }
         .nd-btn.nd-small { flex: 0 0 auto; margin-top: calc(6px * var(--p)); padding: calc(5px * var(--p)) calc(10px * var(--p)); font-size: calc(12px * var(--p)); font-weight: normal; }
         .nd-list li .nd-dot { flex: 0 0 auto; }
+        .nd-dot svg { width: 62%; height: 62%; display: block; }
         .nd-dot.nd-l2 { font-size: calc(11px * var(--p)); }
         .nd-dot.nd-l3 { font-size: calc(9.5px * var(--p)); letter-spacing: -0.4px; }
         .nd-suggest { display: flex; flex-wrap: wrap; gap: calc(6px * var(--p)); }
@@ -318,8 +369,43 @@
             #a1ry-dash.nd-flash #nd-main svg { animation: none; color: #ffd166; }
             #a1ry-dash.nd-flash #nd-main::after { animation: none; opacity: 1; }
         }
+        /* Going offline panel */
+        .nd-panel .nd-check input[type="radio"] { margin: 0; }
+        .nd-sub { margin: calc(4px * var(--p)) 0 0 calc(22px * var(--p)); }
+        .nd-off-log li { cursor: default; flex-wrap: wrap; }
+        .nd-off-log li:hover { background: none !important; }
+        .nd-off-log li small { flex: 0 0 100%; color: #777; font-size: calc(11px * var(--p)); }
+        .nd-off-log .nd-st { flex: 0 0 auto; font-size: calc(11px * var(--p)); color: #999; }
+        .nd-off-log .nd-st.nd-ok { color: #6c6; }
+        .nd-off-log .nd-st.nd-gone { color: #777; text-decoration: line-through; }
+        .nd-off-log .nd-btn { flex: 0 0 auto; padding: calc(2px * var(--p)) calc(8px * var(--p)); font-size: calc(11px * var(--p)); background: #6a2d2d !important; }
+        .nd-panel input[type="password"] { width: 100%; padding: calc(7px * var(--p)) calc(8px * var(--p)); font-size: 16px; font-family: "Courier New", Courier, monospace;
+            background: #222 !important; color: #fff !important; border: 1px solid #555 !important; border-radius: calc(4px * var(--p)); }
+        .nd-test { font-size: calc(11px * var(--p)); color: #e0b030; margin: calc(-4px * var(--p)) 0 calc(8px * var(--p)); }
+        /* Admin panel: one card per request waiting for an admin */
+        .nd-adm { list-style: none; margin: 0; padding: 0; max-height: calc(360px * var(--p)); overflow-y: auto; }
+        .nd-adm li { padding: calc(8px * var(--p)); border: 1px solid #333; border-radius: calc(6px * var(--p)); margin-bottom: calc(6px * var(--p)); background: #1a1a1a !important; }
+        .nd-adm .nd-who { color: #fff; font-weight: bold; }
+        .nd-adm .nd-kind { float: right; font-size: calc(11px * var(--p)); font-weight: bold; padding: 1px calc(6px * var(--p)); border-radius: calc(8px * var(--p)); background: #333 !important; color: #ddd; }
+        .nd-adm .nd-kind.nd-k-merc, .nd-adm .nd-kind.nd-k-stricken { background: #5a2424 !important; color: #fcc; }
+        .nd-adm small { display: block; color: #888; font-size: calc(11px * var(--p)); margin-top: 2px; }
+        .nd-adm .nd-row { margin-top: calc(6px * var(--p)); }
+        .nd-adm .nd-btn { padding: calc(5px * var(--p)) calc(8px * var(--p)); font-size: calc(12px * var(--p)); }
+        .nd-btn.nd-danger { background: #7a1a1a !important; }
+        .nd-adm-what { color: #ddd; line-height: 1.4; }
+        .nd-adm-what b { color: #fff; }
+        .nd-code { margin: 0; padding: calc(8px * var(--p)); background: #0c0c0c !important; border: 1px solid #333; border-radius: calc(4px * var(--p));
+            color: #9fd49f; font: calc(11px * var(--p))/1.4 "Courier New", Courier, monospace; white-space: pre-wrap; word-break: break-all; }
+        .nd-switch { display: flex !important; align-items: center; gap: calc(8px * var(--p)); margin-top: calc(12px * var(--p)) !important; color: #ddd !important; cursor: pointer; }
+        .nd-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+        .nd-track { flex: 0 0 auto; position: relative; width: calc(40px * var(--p)); height: calc(22px * var(--p)); border-radius: calc(11px * var(--p)); background: #444 !important; transition: background 0.15s; }
+        .nd-track::after { content: ''; position: absolute; top: calc(3px * var(--p)); left: calc(3px * var(--p)); width: calc(16px * var(--p)); height: calc(16px * var(--p));
+            border-radius: 50%; background: #ddd; transition: transform 0.15s; }
+        .nd-switch input:checked + .nd-track { background: #a33 !important; }
+        .nd-switch input:checked + .nd-track::after { transform: translateX(calc(18px * var(--p))); }
+        .nd-switch input:focus-visible + .nd-track { outline: 2px solid #888; }
         a.nd-btn { display: flex; align-items: center; justify-content: center; text-decoration: none !important; }
-        .nd-btn[aria-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
+        .nd-btn[aria-disabled="true"], .nd-btn:disabled { opacity: 0.4; cursor: not-allowed; }
     `;
     document.head.appendChild(style);
 
@@ -372,6 +458,7 @@
             <p><b>Moving it.</b> Drag the martini anywhere. It stays near the screen corner you put it by.</p>
             <p><b>Shortcuts.</b> Tap + in the fan to add one: pick a suggestion, or give a name, up to 3 letters for its icon, and a link. Remove them here in Settings.</p>
             <p><b>Faction messages.</b> Tap Messages in the fan. A red number shows new ones, and the martini flashes while a message is waiting for your answers. You can change your answers until the message closes.</p>
+            <p><b>Going offline.</b> Tap the bed, set how many hours you'll be away and pick one: a bounty on yourself, a merc hit or a Stricken merc hit. Your request goes to the faction sheet for an officer to action. You can cancel it until they do. Faction admins also see an Admin button there, listing the requests still waiting.</p>
             <p><b>Your API key.</b> It's kept in this browser. For faction messages, the key is sent once to the faction's a1ry Dash server, which asks Torn who you are and checks you're in Naughty Souls. The server doesn't keep the key. Your answers go to a faction Google Sheet with your name and player ID.</p>
         </div>
         <div class="nd-row"><button type="button" class="nd-btn nd-primary" id="nd-help-back">Back</button></div>`;
@@ -407,6 +494,62 @@
         <h3>Faction messages <button type="button" class="nd-x" id="nd-msg-close" aria-label="Close" title="Close">\u00D7</button></h3>
         <div id="nd-msg-list"></div>`;
     document.body.appendChild(msgPanel);
+
+    const offPanel = document.createElement('div');
+    offPanel.className = 'nd-panel';
+    offPanel.innerHTML = `
+        <h3>Going offline <button type="button" class="nd-x" id="nd-off-close" aria-label="Close" title="Close">\u00D7</button></h3>
+        <div class="nd-section">
+            <label>Your requests</label>
+            <div id="nd-off-log"></div>
+        </div>
+        <div class="nd-section" id="nd-off-form">
+            <label for="nd-off-hours">Offline for: <b id="nd-off-hours-val"></b></label>
+            <input type="range" id="nd-off-hours" min="1" max="${OFFLINE_HOURS_MAX}" step="1">
+            <label class="nd-check"><input type="radio" name="nd-off-kind" value="bounty"> Request a bounty (${OFFLINE_PRICE.bounty})</label>
+            <label class="nd-check"><input type="radio" name="nd-off-kind" value="merc"> Request a merc hit</label>
+            <div class="nd-sub" id="nd-off-merc" style="display: none">
+                <label class="nd-check"><input type="radio" name="nd-off-merc" value="merc" checked> Regular hit (${OFFLINE_PRICE.merc})</label>
+                <label class="nd-check"><input type="radio" name="nd-off-merc" value="stricken"> Stricken hit (${OFFLINE_PRICE.stricken})</label>
+            </div>
+            <div class="nd-err" id="nd-off-err"></div>
+            <div class="nd-row"><button type="button" class="nd-btn nd-primary" id="nd-off-submit">Submit</button></div>
+        </div>
+        <div class="nd-section" id="nd-off-done" style="display: none">
+            <div class="nd-status" id="nd-off-done-text"></div>
+            <div class="nd-row"><button type="button" class="nd-btn nd-primary" id="nd-off-ok">OK</button></div>
+        </div>
+        <div class="nd-row" id="nd-off-admin-row" style="display: none"><button type="button" class="nd-btn" id="nd-off-admin">Admin</button></div>`;
+    document.body.appendChild(offPanel);
+
+    const admPanel = document.createElement('div');
+    admPanel.className = 'nd-panel nd-wide';
+    admPanel.innerHTML = `
+        <h3>Admin: offline requests <button type="button" class="nd-x" id="nd-adm-close" aria-label="Back" title="Back">\u00D7</button></h3>
+        ${MERC_LIVE ? '' : '<div class="nd-test">Test mode: merc hits are not sent.</div>'}
+        <div class="nd-section" id="nd-adm-keybox">
+            <label for="nd-adm-key">Public API key for merc orders (C39)</label>
+            <div class="nd-inline">
+                <input type="password" id="nd-adm-key" placeholder="16-character key" maxlength="16" autocomplete="off" autocapitalize="off" spellcheck="false">
+                <button type="button" class="nd-btn nd-primary" id="nd-adm-key-save">Save</button>
+            </div>
+            <div class="nd-status" id="nd-adm-key-status"></div>
+            <div class="nd-hint">Separate from the key in Settings. Kept in this browser and sent only to C39 (ultimata.net) when you order a merc hit.</div>
+        </div>
+        <div class="nd-section" id="nd-adm-list"></div>
+        <div id="nd-adm-confirm" style="display: none">
+            <div class="nd-adm-what" id="nd-adm-what"></div>
+            <label>Request that would be sent</label>
+            <pre class="nd-code" id="nd-adm-code"></pre>
+            <label class="nd-switch"><input type="checkbox" id="nd-adm-toggle"><span class="nd-track"></span><span id="nd-adm-toggle-text"></span></label>
+            <div class="nd-status" id="nd-adm-result"></div>
+            <div class="nd-row">
+                <button type="button" class="nd-btn" id="nd-adm-back">Back</button>
+                <button type="button" class="nd-btn nd-danger" id="nd-adm-go" disabled>Place merc</button>
+            </div>
+        </div>
+        <div class="nd-row" id="nd-adm-foot"><button type="button" class="nd-btn" id="nd-adm-done">Back</button></div>`;
+    document.body.appendChild(admPanel);
 
     // -------------------------------------------------------------------
     // 4. Position and size
@@ -468,6 +611,21 @@
         return (s.name || '').trim().charAt(0).toUpperCase() || '?';
     }
 
+    // Fill a node or dot with a shortcut's picture (sym) or its letters
+    function fillIcon(el, s, letterClass) {
+        if (s.sym && ICONS[s.sym]) { el.innerHTML = svg(s.sym); return; }
+        const text = iconText(s);
+        if (letterClass) {
+            const letter = document.createElement('span');
+            letter.className = letterClass + lenClass(text);
+            letter.textContent = text;
+            el.appendChild(letter);
+        } else {
+            el.className += lenClass(text);
+            el.textContent = text;
+        }
+    }
+
     // Smaller text for 2- and 3-letter icons
     function lenClass(text) {
         return text.length > 1 ? ' nd-l' + Math.min(3, text.length) : '';
@@ -476,7 +634,7 @@
     // Order around the arc: built-ins, the user's shortcuts, +, Settings
     function fanItems() {
         const items = BUILT_IN.map(b => ({ ...b, kind: b.kind || 'link' }));
-        shortcuts.forEach((s, i) => items.push({ id: 'sc' + i, label: s.name, url: s.url, kind: 'link', letter: iconText(s) }));
+        shortcuts.forEach((s, i) => items.push({ id: 'sc' + i, label: s.name, url: s.url, kind: 'link', shortcut: s }));
         items.push({ id: 'add', label: 'Add', icon: 'plus', kind: 'add' });
         items.push({ id: 'settings', label: 'Settings', icon: 'gear', kind: 'settings' });
         return items;
@@ -497,14 +655,8 @@
             } else {
                 el.type = 'button';
             }
-            if (item.icon) {
-                el.innerHTML = svg(item.icon);
-            } else {
-                const letter = document.createElement('span');
-                letter.className = 'nd-letter' + lenClass(item.letter);
-                letter.textContent = item.letter;
-                el.appendChild(letter);
-            }
+            if (item.icon) el.innerHTML = svg(item.icon);
+            else fillIcon(el, item.shortcut, 'nd-letter');
             if (item.kind === 'messages') {
                 const badge = document.createElement('span');
                 badge.className = 'nd-badge';
@@ -555,6 +707,7 @@
         const kind = child.dataset.kind;
         if (kind === 'settings') { setOpen(false); openSettings(); }
         else if (kind === 'messages') { setOpen(false); openMessages(); }
+        else if (kind === 'offline') { setOpen(false); openOffline(); }
         else if (kind === 'add') { setOpen(false); openAdd(); }
         else setOpen(false); // links navigate by themselves
     });
@@ -567,6 +720,8 @@
     document.addEventListener('keydown', (e) => {
         if (e.key !== 'Escape') return;
         if (msgPanel.classList.contains('nd-show')) closePanel(msgPanel);
+        else if (offPanel.classList.contains('nd-show')) closePanel(offPanel);
+        else if (admPanel.classList.contains('nd-show')) openOffline();
         else if (helpPanel.classList.contains('nd-show')) openSettings();
         else if (settingsPanel.classList.contains('nd-show')) closePanel(settingsPanel);
         else if (addPanel.classList.contains('nd-show')) closePanel(addPanel);
@@ -619,6 +774,8 @@
         closePanel(addPanel);
         closePanel(msgPanel);
         closePanel(helpPanel);
+        closePanel(offPanel);
+        closePanel(admPanel);
         panel.classList.add('nd-show');
     }
     function closePanel(panel) { panel.classList.remove('nd-show'); }
@@ -641,8 +798,8 @@
         shortcuts.forEach((s, i) => {
             const li = document.createElement('li');
             const dot = document.createElement('span');
-            dot.className = 'nd-dot' + lenClass(iconText(s));
-            dot.textContent = iconText(s);
+            dot.className = 'nd-dot';
+            fillIcon(dot, s);
             li.appendChild(dot);
             const text = document.createElement('span');
             text.textContent = s.name + ' ';
@@ -717,6 +874,8 @@
             save('session', null);
             msgs = null;
             save('msgs', null);
+            offData = null;
+            save('offline', null);
             renderBadges();
         }
         apiKey = key;
@@ -778,11 +937,11 @@
             b.className = 'nd-chip';
             b.title = 'Add ' + g.name;
             const dot = document.createElement('span');
-            dot.className = 'nd-dot' + lenClass(g.icon);
-            dot.textContent = g.icon;
+            dot.className = 'nd-dot';
+            fillIcon(dot, g);
             b.append(dot, document.createTextNode(g.name));
             b.addEventListener('click', () => {
-                shortcuts.push({ name: g.name, url: g.url, icon: g.icon });
+                shortcuts.push(g.sym ? { name: g.name, url: g.url, icon: g.icon, sym: g.sym } : { name: g.name, url: g.url, icon: g.icon });
                 save('shortcuts', shortcuts);
                 buildFan();
                 // Same as adding your own: close the panel and show the fan with the new node
@@ -1186,6 +1345,319 @@
         refreshMessages(true);
     }
     msgPanel.querySelector('#nd-msg-close').addEventListener('click', () => closePanel(msgPanel));
+
+    // -------------------------------------------------------------------
+    // 8b. Going offline: ask for a bounty or a merc hit on yourself while away
+    // -------------------------------------------------------------------
+    const offLog = offPanel.querySelector('#nd-off-log');
+    const offForm = offPanel.querySelector('#nd-off-form');
+    const offDone = offPanel.querySelector('#nd-off-done');
+    const offHours = offPanel.querySelector('#nd-off-hours');
+    const offHoursVal = offPanel.querySelector('#nd-off-hours-val');
+    const offMerc = offPanel.querySelector('#nd-off-merc');
+    const offErr = offPanel.querySelector('#nd-off-err');
+    const offSubmit = offPanel.querySelector('#nd-off-submit');
+    // The player's latest requests from the server: { list, error: text } (this tab only)
+    let offData = load('offline', null);
+    let offLoading = false;
+
+    function offKind() {
+        const r = offPanel.querySelector('input[name="nd-off-kind"]:checked');
+        if (!r) return '';
+        if (r.value === 'bounty') return 'bounty';
+        return offPanel.querySelector('input[name="nd-off-merc"]:checked').value; // merc | stricken
+    }
+    function showOffStep(step) {
+        offForm.style.display = step === 'form' ? '' : 'none';
+        offDone.style.display = step === 'done' ? '' : 'none';
+    }
+    function showHours() { offHoursVal.textContent = offHours.value + ' h'; }
+
+    const KIND_LABEL = { bounty: 'Bounty', merc: 'Merc hit', stricken: 'Stricken hit' };
+    // "16 Nov 21:04 TCT"
+    function tct(iso) {
+        const d = new Date(iso);
+        if (isNaN(d)) return '';
+        const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()];
+        return d.getUTCDate() + ' ' + mon + ' ' + String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0') + ' TCT';
+    }
+
+    function renderOffLog() {
+        offLog.textContent = '';
+        offPanel.querySelector('#nd-off-admin-row').style.display = offData && offData.admin ? '' : 'none';
+        if (!apiKey) {
+            offLog.appendChild(el('div', 'nd-status nd-warn', 'Add your API key in Settings first.'));
+            return;
+        }
+        if (offData && offData.error) offLog.appendChild(el('div', 'nd-status nd-bad', offData.error));
+        if (!offData || !offData.list) {
+            offLog.appendChild(el('div', 'nd-empty', offLoading ? 'Loading...' : 'Not loaded yet.'));
+            return;
+        }
+        if (!offData.list.length) {
+            offLog.appendChild(el('div', 'nd-empty', 'None yet.'));
+            return;
+        }
+        const ul = el('ul', 'nd-inbox nd-off-log');
+        offData.list.forEach(r => {
+            const li = el('li');
+            li.appendChild(el('span', '', (KIND_LABEL[r.request] || r.request) + ', ' + r.hours + ' h'));
+            const st = r.status.toLowerCase();
+            const cls = st === 'cancelled' ? ' nd-gone' : st === 'requested' ? '' : ' nd-ok';
+            li.appendChild(el('span', 'nd-st' + cls, r.status));
+            if (r.canCancel) {
+                const b = el('button', 'nd-btn', 'Cancel');
+                b.type = 'button';
+                b.addEventListener('click', () => cancelOffline(r.id, b));
+                li.appendChild(b);
+            }
+            li.appendChild(el('small', '', tct(r.time) + (r.until ? ', back by ' + tct(r.until).replace(/^\d+ \w+ /, '') : '')));
+            ul.appendChild(li);
+        });
+        offLog.appendChild(ul);
+    }
+
+    // Every server call here returns the fresh list
+    async function offCall(params) {
+        const r = await withSession(params);
+        offData = { list: r.requests || [], admin: !!r.admin, error: null };
+        save('offline', offData);
+        renderOffLog();
+    }
+    async function loadOffline() {
+        if (offLoading || !apiKey) return;
+        offLoading = true;
+        if (!offData) renderOffLog();
+        try {
+            await offCall({ a: 'offline' });
+        } catch (e) {
+            offData = { ...(offData || { list: null }), error: e.message };
+            renderOffLog();
+        } finally {
+            offLoading = false;
+        }
+    }
+    async function cancelOffline(id, btn) {
+        btn.disabled = true;
+        btn.textContent = '...';
+        try {
+            await offCall({ a: 'offline_cancel', id });
+        } catch (e) {
+            offData = { ...(offData || { list: null }), error: e.message };
+            renderOffLog();
+        }
+    }
+
+    function offFinish(text, state) {
+        const t = offPanel.querySelector('#nd-off-done-text');
+        t.textContent = text;
+        t.className = 'nd-status nd-' + state;
+        showOffStep('done');
+    }
+
+    offHours.addEventListener('input', () => { showHours(); save('off_hours', Number(offHours.value)); });
+    offPanel.querySelectorAll('input[name="nd-off-kind"]').forEach(r => r.addEventListener('change', () => {
+        offMerc.style.display = offKind() === 'bounty' ? 'none' : '';
+        offErr.textContent = '';
+    }));
+
+    offSubmit.addEventListener('click', async () => {
+        if (offSubmit.disabled) return;
+        offErr.textContent = '';
+        const kind = offKind();
+        if (!apiKey) { offErr.textContent = 'Add your API key in Settings first.'; return; }
+        if (!kind) { offErr.textContent = 'Pick a bounty or a merc hit.'; return; }
+        offSubmit.disabled = true;
+        offSubmit.textContent = 'Sending...';
+        try {
+            await offCall({ a: 'offline_add', h: offHours.value, r: kind });
+            offFinish((kind === 'bounty' ? 'Bounty' : kind === 'stricken' ? 'Stricken merc hit' : 'Merc hit') +
+                ' request sent to the faction sheet for an officer to action. You can cancel it above until then.', 'ok');
+        } catch (e) {
+            offErr.textContent = e.message || 'Couldn\'t send it.';
+        } finally {
+            offSubmit.disabled = false;
+            offSubmit.textContent = 'Submit';
+        }
+    });
+    offPanel.querySelector('#nd-off-ok').addEventListener('click', () => closePanel(offPanel));
+    offPanel.querySelector('#nd-off-close').addEventListener('click', () => closePanel(offPanel));
+
+    offPanel.querySelector('#nd-off-admin').addEventListener('click', openAdmin);
+
+    // -------------------------------------------------------------------
+    // 8c. Admin panel (admins only; the server checks the Admins tab on every call): the
+    //     requests nobody has actioned. Place bounty opens Torn's add-bounty page for that
+    //     player; Place merc shows the C39 request and a toggle to confirm. Mark placed
+    //     records it as actioned
+    // -------------------------------------------------------------------
+    const admList = admPanel.querySelector('#nd-adm-list');
+    const admConfirm = admPanel.querySelector('#nd-adm-confirm');
+    const admFoot = admPanel.querySelector('#nd-adm-foot');
+    const admToggle = admPanel.querySelector('#nd-adm-toggle');
+    const admGo = admPanel.querySelector('#nd-adm-go');
+    const admResult = admPanel.querySelector('#nd-adm-result');
+    let admItems = null;
+    let admError = '';
+    let admLoading = false;
+
+    // The admin's own key for C39, separate from the Settings key
+    const admKey = admPanel.querySelector('#nd-adm-key');
+    const admKeyStatus = admPanel.querySelector('#nd-adm-key-status');
+    let adminKey = load('admin_key', '') || '';
+    function showAdmKeyStatus() {
+        admKeyStatus.textContent = adminKey ? 'Key saved (ends ' + adminKey.slice(-4) + ').' : 'No key saved: needed to order merc hits.';
+        admKeyStatus.className = 'nd-status ' + (adminKey ? 'nd-ok' : 'nd-warn');
+    }
+    admPanel.querySelector('#nd-adm-key-save').addEventListener('click', () => {
+        const key = admKey.value.trim();
+        if (key && !/^[A-Za-z0-9]{16}$/.test(key)) {
+            admKeyStatus.textContent = 'A Torn API key is 16 letters and numbers.';
+            admKeyStatus.className = 'nd-status nd-bad';
+            return;
+        }
+        adminKey = key;
+        save('admin_key', adminKey);
+        showAdmKeyStatus();
+    });
+
+    function admView(confirm) {
+        admPanel.querySelector('#nd-adm-keybox').style.display = confirm ? 'none' : '';
+        admList.style.display = confirm ? 'none' : '';
+        admFoot.style.display = confirm ? 'none' : '';
+        admConfirm.style.display = confirm ? '' : 'none';
+    }
+
+    function renderAdmin() {
+        admList.textContent = '';
+        if (admError) admList.appendChild(el('div', 'nd-status nd-bad', admError));
+        if (!admItems) {
+            admList.appendChild(el('div', 'nd-empty', admLoading ? 'Loading...' : 'Not loaded yet.'));
+            return;
+        }
+        if (!admItems.length) {
+            admList.appendChild(el('div', 'nd-empty', 'Nothing waiting. All requests have been actioned.'));
+            return;
+        }
+        const ul = el('ul', 'nd-adm');
+        admItems.forEach(it => {
+            const li = el('li');
+            li.appendChild(el('span', 'nd-kind nd-k-' + it.request, KIND_LABEL[it.request] || it.request));
+            li.appendChild(el('div', 'nd-who', it.name + ' [' + it.player + ']'));
+            li.appendChild(el('small', '', 'Offline ' + it.hours + ' h from ' + tct(it.time) +
+                (it.until ? ', back by ' + tct(it.until) : '')));
+            const row = el('div', 'nd-row');
+            if (it.request === 'bounty') {
+                const a = el('a', 'nd-btn nd-primary', 'Place bounty');
+                a.href = BOUNTY_URL + encodeURIComponent(it.player);
+                a.target = '_blank';
+                a.rel = 'noopener';
+                row.appendChild(a);
+            } else {
+                const b = el('button', 'nd-btn nd-danger', 'Place merc');
+                b.type = 'button';
+                b.addEventListener('click', () => showMercConfirm(it));
+                row.appendChild(b);
+            }
+            const mark = el('button', 'nd-btn', 'Mark placed');
+            mark.type = 'button';
+            mark.title = 'Record this request as actioned (status "placed by you")';
+            mark.addEventListener('click', () => markPlaced(it.id, mark));
+            row.appendChild(mark);
+            li.appendChild(row);
+            ul.appendChild(li);
+        });
+        admList.appendChild(ul);
+    }
+
+    async function admCall(params) {
+        const r = await withSession(params);
+        admItems = r.items || [];
+        admError = '';
+        renderAdmin();
+    }
+    async function loadAdmin() {
+        if (admLoading) return;
+        admLoading = true;
+        renderAdmin();
+        try {
+            await admCall({ a: 'admin_list' });
+        } catch (e) {
+            admError = e.message;
+            if (e.code === 'admin' && offData) { offData.admin = false; save('offline', offData); }
+            renderAdmin();
+        } finally {
+            admLoading = false;
+        }
+    }
+    async function markPlaced(id, btn) {
+        btn.disabled = true;
+        btn.textContent = '...';
+        try {
+            await admCall({ a: 'admin_mark', id });
+        } catch (e) {
+            admError = e.message;
+            renderAdmin();
+        }
+    }
+
+    function showMercConfirm(it) {
+        if (!adminKey) {
+            showAdmKeyStatus();
+            admKeyStatus.textContent = 'Save your Public API key above first.';
+            admKeyStatus.className = 'nd-status nd-bad';
+            admKey.focus();
+            return;
+        }
+        const stricken = it.request === 'stricken';
+        const what = admPanel.querySelector('#nd-adm-what');
+        what.textContent = '';
+        what.append('Place a ', el('b', '', stricken ? 'Stricken merc hit' : 'regular merc hit'),
+            ' (' + OFFLINE_PRICE[it.request] + ', paid by the faction) on ', el('b', '', it.name + ' [' + it.player + ']'), '.');
+        admPanel.querySelector('#nd-adm-code').textContent = 'POST ' + MERC_URL + '\n' +
+            JSON.stringify({ key: '(admin key ending ' + adminKey.slice(-4) + ')', userId: it.player, isStricken: stricken }, null, 1);
+        admPanel.querySelector('#nd-adm-toggle-text').textContent = 'I confirm this hit on ' + it.name;
+        admToggle.checked = false;
+        admGo.disabled = true;
+        admGo.style.display = '';
+        admResult.textContent = '';
+        admResult.className = 'nd-status';
+        admView(true);
+    }
+    admToggle.addEventListener('change', () => { admGo.disabled = !admToggle.checked; });
+    admGo.addEventListener('click', () => {
+        if (admGo.disabled) return;
+        // Test mode: nothing leaves the browser
+        admResult.textContent = 'Test mode: nothing was sent. When this goes live, the request above goes to C39. ' +
+            'Use Mark placed once the hit is really ordered.';
+        admResult.className = 'nd-status nd-warn';
+        admGo.style.display = 'none';
+        admToggle.disabled = false;
+    });
+    admPanel.querySelector('#nd-adm-back').addEventListener('click', () => admView(false));
+    admPanel.querySelector('#nd-adm-done').addEventListener('click', openOffline);
+    admPanel.querySelector('#nd-adm-close').addEventListener('click', openOffline);
+
+    function openAdmin() {
+        adminKey = load('admin_key', '') || '';
+        admKey.value = adminKey;
+        showAdmKeyStatus();
+        admView(false);
+        openPanel(admPanel);
+        loadAdmin();
+    }
+
+    function openOffline() {
+        offHours.value = Math.min(OFFLINE_HOURS_MAX, Math.max(1, Number(load('off_hours', 8)) || 8));
+        showHours();
+        offPanel.querySelectorAll('input[name="nd-off-kind"]').forEach(r => { r.checked = false; });
+        offMerc.style.display = 'none';
+        offErr.textContent = '';
+        showOffStep('form');
+        renderOffLog();
+        openPanel(offPanel);
+        loadOffline();
+    }
 
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') refreshMessages(false);

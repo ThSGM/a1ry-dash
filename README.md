@@ -14,9 +14,22 @@ towards the middle of the screen:
   `29h 5m`, ticking down each minute) on messages that have a deadline; tap one to open it below. The open
   message's row is highlighted. The martini flashes gold while a new message
   is waiting for your answers. Needs your API key in Settings.
-- **Your shortcuts**: one button per link you added, showing its icon: up to 3 letters (the first
-  letter of its name if you don't choose).
-- **+**: add a shortcut. Tap a suggestion (War, Chain, Hospital, Item, Gym; their icons are War, Chn, Hos, Itm, Gym), or give a name, an
+- **Going offline** (bed): set how many hours you'll be away (1-12) and pick one request:
+  **Request a bounty** ($100k-$1m), or **Request a merc hit**: regular ($3m) or Stricken
+  ($3.5m). The request goes to the faction sheet (Offline tab, with the type of hit and a link
+  to Torn's add-bounty page or your profile) for an officer to action. You can cancel it until
+  they do. Your 5 latest requests are listed at the top with their status.
+
+  **Admin** (only for player IDs on the sheet's Admins tab): every request not yet actioned.
+  **Place bounty** opens Torn's add-bounty page for that player. **Place merc** shows the
+  request it would send to the C39 mercs and a toggle to confirm (*testing: nothing is sent
+  yet*). **Mark placed** records it as done (status "placed by" you); it's a separate step on
+  purpose. Merc orders use a Public API key you save in the Admin panel itself, separate from
+  the key in Settings; it is sent only to C39.
+- **Your shortcuts**: one button per link, showing its icon: up to 3 letters (the first
+  letter of its name if you don't choose). **War** (crossed swords) and **Chain** (a chain) are
+  there by default; remove them in Settings if you don't want them.
+- **+**: add a shortcut. Tap a suggestion (War, Chain, Hospital, Item, Gym; their icons are swords, a chain, Hos, Itm, Gym), or give a name, an
   icon of up to 3 letters (e.g. `Itm`) and a URL: a full `https://` link, or a Torn path such as
   `/gym.php`. **Current page URL** fills in the page you're on.
 - **Settings** (gear):
