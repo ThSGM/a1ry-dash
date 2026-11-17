@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         a1ry Dash
 // @namespace    https://github.com/ThSGM/a1ry-dash
-// @version      0.31
-// @description  A movable round launcher for Torn: tap it for a fan of shortcuts (faction messages, settings and your own links). Desktop, mobile and TornPDA
+// @version      0.32
+// @description  A movable round launcher for Torn: tap it for a menu of shortcuts (faction messages, settings and your own links). Desktop, mobile and TornPDA
 // @author       ThSGM
 // @match        https://www.torn.com/*
 // @grant        GM_xmlhttpRequest
@@ -19,7 +19,9 @@
 // anywhere; it remembers where, anchored to the nearest screen corner so it
 // stays put when the window resizes or the phone rotates.
 //
-// Tap it and a fan of smaller nodes opens towards the middle of the screen:
+// Tap it and a vertical menu of smaller nodes opens: upwards when it sits in
+// the bottom half of the screen, downwards in the top half (a second column
+// beside it, towards the middle, if the screen is too short):
 //
 //   Messages   faction messages from the officers (not Torn's own mail), with
 //              a red count of new ones on this node and the main node. Some
@@ -54,7 +56,7 @@
 //              Finish), a check screen, then Confirm and send. The server
 //              gives the ID, MMDD_XX (TCT date + number)
 //   War        (crossed swords) a fixed group: tap it and two more bubbles pop
-//              out beside it: Faction war (flag) and Chain (chain)
+//              out sideways (towards the middle): Faction war (flag) and Chain (chain)
 //   Items      (box) a fixed group: Items (backpack) and Faction armory (locker)
 //   <yours>    one node per shortcut; its icon is up to 3 letters (the first
 //              letter of its name by default)
@@ -102,7 +104,7 @@
     if (document.getElementById('a1ry-dash')) return;
 
     // Keep in step with @version above (GM_info isn't available in every userscript host)
-    const SCRIPT_VERSION = '0.31';
+    const SCRIPT_VERSION = '0.32';
     const KEY = 'a1ry_dash_';
     // Settings' Update button: the script's Greasy Fork page, whose Install button updates it.
     // Empty = greyed out
@@ -163,15 +165,16 @@
     // Panels are drawn at this fraction of their original size
     const PANEL_SCALE = 0.88;
 
-    // Fan geometry (px at 100% Size): node sizes, the fan's radius, and the gap between
-    // neighbouring child nodes along the arc. The arc widens with more nodes, up to MAX_SPREAD
+    // Menu geometry (px at 100% Size). The bubbles stand in a vertical column above or below
+    // the main node; a column that would run off the screen continues in a second column
+    // beside it, towards the middle of the screen
     const MAIN_SIZE = 44;
     const CHILD_SIZE = 36;
-    const FAN_RADIUS = 58;
-    const ARC_GAP = 40;
-    const MAX_SPREAD = 200;
-    const FAN_RADIUS_STEP = 40; // extra radius per ring once a single arc is full
-    const SUB_STEP = 42;        // a group's secondary bubbles sit this much further out
+    const LIST_FIRST = 46;  // main node centre to the first bubble's centre
+    const LIST_STEP = 40;   // centre to centre down the column (4px between bubbles)
+    const LIST_COL = 42;    // centre to centre between columns
+    const SUB_STEP = 42;    // a group's secondary bubbles, sideways in a row
+    const EDGE_GAP = 6;     // keep bubbles this far from the screen edge
 
     // -------------------------------------------------------------------
     // 1. Storage
@@ -389,6 +392,8 @@
         #nd-ver { position: absolute; left: 0; top: calc(${MAIN_SIZE / 2 + 3}px * var(--s)); transform: translateX(-50%);
             font-size: calc(9px * var(--s)); color: #777; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 0.18s; }
         #a1ry-dash.nd-open #nd-ver { opacity: 0.8; }
+        /* Menu opening downwards: the version goes above the martini instead */
+        #a1ry-dash.nd-down #nd-ver { top: auto; bottom: calc(${MAIN_SIZE / 2 + 3}px * var(--s)); }
 
         /* The martini flashes gold while a new message waits for answers. The node's colours are
            !important (to beat Torn's styles), so the animation runs on the icon and a glow ring */
@@ -751,7 +756,7 @@
         return text.length > 1 ? ' nd-l' + Math.min(3, text.length) : '';
     }
 
-    // Order around the arc: built-ins, the groups, the user's shortcuts, +, Settings
+    // Order from the main node outwards: built-ins, the groups, the user's shortcuts, +, Settings
     function fanItems() {
         const items = BUILT_IN.map(b => ({ ...b, kind: b.kind || 'link' }));
         GROUPS.forEach(g => items.push({ id: 'g-' + g.id, label: g.label, icon: g.icon, kind: 'group', group: g }));
@@ -826,44 +831,46 @@
         });
     }
 
-    // Spread the children on arcs centred on the direction from the main node to the middle
-    // of the screen, so the fan always opens inwards (away from the nearest edges)
+    // Stack the children in a column: upwards when the main node is in the bottom half of the
+    // screen, downwards when it is in the top half. If the column would leave the screen, the
+    // rest go in another column beside it, on the side towards the middle of the screen
     function layoutFan() {
         const children = Array.from(root.querySelectorAll('.nd-child:not(.nd-subnode)'));
-        const toward = Math.atan2(window.innerHeight / 2 - centreY, window.innerWidth / 2 - centreX);
-        let placed = 0;
-        let ring = 0;
-        while (placed < children.length) {
-            const radius = FAN_RADIUS + ring * FAN_RADIUS_STEP;
-            const step = ARC_GAP / radius; // radians between neighbours on this ring
-            const capacity = Math.max(1, Math.floor((MAX_SPREAD * Math.PI / 180) / step) + 1);
-            const count = Math.min(capacity, children.length - placed);
-            const start = toward - (step * (count - 1)) / 2;
-            for (let i = 0; i < count; i++) {
-                const a = start + step * i;
-                const el = children[placed + i];
-                el.style.setProperty('--dx', (Math.cos(a) * radius).toFixed(1) + 'px');
-                el.style.setProperty('--dy', (Math.sin(a) * radius).toFixed(1) + 'px');
-                el.style.transitionDelay = (i * 0.025) + 's';
-                if (el.dataset.group) layoutSubs(el.dataset.group, a, radius);
+        const s = scale();
+        const down = centreY < window.innerHeight / 2;
+        const dirY = down ? 1 : -1;
+        const dirX = centreX > window.innerWidth / 2 ? -1 : 1;
+        root.classList.toggle('nd-down', down);
+        // Room from the main node's centre to the screen edge, in unscaled px
+        const room = (down ? window.innerHeight - centreY : centreY) / s - CHILD_SIZE / 2 - EDGE_GAP;
+        const perCol = Math.max(1, Math.floor((room - LIST_FIRST) / LIST_STEP) + 1);
+        children.forEach((el, i) => {
+            const col = Math.floor(i / perCol);
+            const row = i % perCol;
+            const dx = dirX * col * LIST_COL;
+            const dy = dirY * (LIST_FIRST + row * LIST_STEP);
+            el.style.setProperty('--dx', dx + 'px');
+            el.style.setProperty('--dy', dy + 'px');
+            el.style.transitionDelay = (row * 0.02) + 's';
+            // A group's bubbles go sideways, past the last bubble on the same row
+            if (el.dataset.group) {
+                let last = col;
+                while ((last + 1) * perCol + row < children.length) last++;
+                layoutSubs(el.dataset.group, dx, dy, dirX * (last - col + 1));
             }
-            placed += count;
-            ring++;
-        }
+        });
     }
-    // A group's bubbles: a short arc SUB_STEP further out, on the group's own direction. They
-    // grow out of the group's bubble (--px/--py)
-    function layoutSubs(id, angle, radius) {
+    // A group's bubbles: a row beside the group's bubble, towards the middle of the screen.
+    // They grow out of the group's bubble (--px/--py). `steps` is how many columns out the
+    // first one sits (±1 with a single column), its sign the direction
+    function layoutSubs(id, gx, gy, steps) {
         const subs = Array.from(root.querySelectorAll('.nd-subnode[data-parent="' + id + '"]'));
-        const r = radius + SUB_STEP;
-        const step = ARC_GAP / r;
-        const start = angle - (step * (subs.length - 1)) / 2;
+        const dir = Math.sign(steps);
         subs.forEach((el, i) => {
-            const a = start + step * i;
-            el.style.setProperty('--px', (Math.cos(angle) * radius).toFixed(1) + 'px');
-            el.style.setProperty('--py', (Math.sin(angle) * radius).toFixed(1) + 'px');
-            el.style.setProperty('--dx', (Math.cos(a) * r).toFixed(1) + 'px');
-            el.style.setProperty('--dy', (Math.sin(a) * r).toFixed(1) + 'px');
+            el.style.setProperty('--px', gx + 'px');
+            el.style.setProperty('--py', gy + 'px');
+            el.style.setProperty('--dx', (gx + (steps - dir) * LIST_COL + dir * (i + 1) * SUB_STEP) + 'px');
+            el.style.setProperty('--dy', gy + 'px');
             el.style.transitionDelay = (i * 0.03) + 's';
         });
     }

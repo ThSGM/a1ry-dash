@@ -3,8 +3,9 @@
 A small round launcher for [Torn](https://www.torn.com) that works at desktop width, in the mobile
 layout and in TornPDA.
 
-A grey martini-glass button floats over the page. Tap it and a fan of shortcut buttons opens
-towards the middle of the screen:
+A grey martini-glass button floats over the page. Tap it and a vertical menu of shortcut buttons
+opens: upwards when the martini is in the bottom half of the screen, downwards when it is in the
+top half. If the screen is too short for one column, the rest go in a second column beside it.
 
 - **Messages**: faction messages from the officers of Naughty Souls (this is not Torn's own
   mail). A red number on the martini and on Messages shows how many are new. Some messages ask
@@ -37,7 +38,8 @@ towards the middle of the screen:
   yet*). **Mark placed** records it as done (status "placed by" you); it's a separate step on
   purpose. Merc orders use a Public API key you save in the Admin panel itself, separate from
   the key in Settings; it is sent only to C39.
-- **War** (crossed swords) and **Items** (box): tap one and two more bubbles pop out beside it.
+- **War** (crossed swords) and **Items** (box): tap one and two more bubbles pop out sideways from it,
+  towards the middle of the screen.
   War: **Faction war** (flag) and **Chain** (chain). Items: **Items** (backpack) and **Faction
   armory** (locker). Tap the group again, or anything else, to fold them away. These are fixed.
 - **Your shortcuts**: one button per link, showing its icon: up to 3 letters (the first
