@@ -64,7 +64,7 @@ top half. If the screen is too short for one column, the rest go in a second col
     name and player ID.
   - The button's size (75-200%), and whether shortcuts open in a new tab.
   - Your shortcuts, each with a **Remove** button.
-  - **Reset position**, **Help** (how things work and what happens to your key), **Update** (opens the script's
+  - **Reset position** (the launcher and the panels), **Help** (how things work and what happens to your key), **Update** (opens the script's
     [Greasy Fork page](https://greasyfork.org/en/scripts/603980-a1ry-dash), where **Install**
     gets you the latest version), **Close**.
 
@@ -73,6 +73,10 @@ the fan, tap the martini again, tap anywhere else, or press Esc.
 
 Drag the martini to move it. It remembers where you put it, relative to the nearest corner of the
 screen, so it stays in place when the window is resized or the phone rotates.
+
+Every panel (Settings, Messages, Going offline, RW Stats and the rest) can be moved by dragging
+its title bar. They all open where you last left one, kept on screen; **Reset position** in
+Settings puts them back in the middle.
 
 Settings and shortcuts are saved in the browser (`localStorage`) and shared by every Torn tab.
 Each browser or device has its own copy.

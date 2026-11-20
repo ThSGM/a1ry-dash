@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         a1ry Dash
 // @namespace    https://github.com/ThSGM/a1ry-dash
-// @version      0.34
+// @version      0.35
 // @description  A movable round launcher for Torn: tap it for a menu of shortcuts (faction messages, settings and your own links). Desktop, mobile and TornPDA
 // @author       ThSGM
 // @match        https://www.torn.com/*
@@ -93,6 +93,10 @@
 //
 // While the fan is open, the version shows in faint grey under the martini.
 //
+// Every panel can be moved by dragging its title bar. All panels share one
+// position (a1ry_dash_panel_pos), kept on screen; Settings > Reset position
+// puts them back in the middle (and the launcher in its corner).
+//
 // Tap the main node again, tap outside the fan, or press Esc to close it.
 //
 // Works the same on desktop, the mobile layout and TornPDA: pointer events
@@ -111,7 +115,7 @@
     if (document.getElementById('a1ry-dash')) return;
 
     // Keep in step with @version above (GM_info isn't available in every userscript host)
-    const SCRIPT_VERSION = '0.34';
+    const SCRIPT_VERSION = '0.35';
     const KEY = 'a1ry_dash_';
     // Settings' Update button: the script's Greasy Fork page, whose Install button updates it.
     // Empty = greyed out
@@ -317,6 +321,9 @@
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
         .nd-panel, .nd-panel * { box-sizing: border-box; }
         .nd-panel.nd-show { display: block; }
+        /* The title bar drags the panel (pointer events; touch-action so a touch drag doesn't scroll) */
+        .nd-panel h3 { cursor: move; touch-action: none; user-select: none; -webkit-user-select: none; }
+        .nd-panel h3 .nd-x { cursor: pointer; }
         .nd-panel h3 { margin: 0 0 calc(12px * var(--p)); font-family: inherit; font-size: calc(14px * var(--p)); font-weight: normal; line-height: 1.3;
             text-transform: uppercase; letter-spacing: 0.04em; color: #e0b030 !important; display: flex; justify-content: space-between; align-items: center; }
         .nd-panel h3 small { font-size: calc(10px * var(--p)); color: #777; font-weight: normal; text-transform: none; letter-spacing: 0; }
@@ -544,7 +551,7 @@
     helpPanel.innerHTML = `
         <h3>a1ry Dash help <button type="button" class="nd-x" id="nd-help-close" aria-label="Back to settings" title="Back to settings">\u00D7</button></h3>
         <div class="nd-help">
-            <p><b>Moving it.</b> Drag the martini anywhere. It stays near the screen corner you put it by.</p>
+            <p><b>Moving it.</b> Drag the martini anywhere. It stays near the screen corner you put it by. Drag a panel by its title to move it; all panels then open there.</p>
             <p><b>Shortcuts.</b> Tap + in the fan to add one: pick a suggestion, or give a name, up to 3 letters for its icon, and a link. Remove them here in Settings.</p>
             <p><b>Faction messages.</b> Tap Messages in the fan. A red number shows new ones, and the martini flashes while a message is waiting for your answers. You can change your answers until the message closes.</p>
             <p><b>Admins.</b> Faction admins (listed in the sheet) get an Admin button under Messages, to send a new message with optional questions or close one early, and one under Going offline, to action requests.</p>
@@ -1001,18 +1008,67 @@
     // -------------------------------------------------------------------
     // 7. Panels
     // -------------------------------------------------------------------
+    const PANELS = [settingsPanel, helpPanel, addPanel, msgPanel, mAdmPanel, offPanel, admPanel, warPanel];
     function openPanel(panel) {
-        closePanel(settingsPanel);
-        closePanel(addPanel);
-        closePanel(msgPanel);
-        closePanel(helpPanel);
-        closePanel(offPanel);
-        closePanel(admPanel);
-        closePanel(mAdmPanel);
-        closePanel(warPanel);
+        PANELS.forEach(closePanel);
         panel.classList.add('nd-show');
+        placePanel(panel);
     }
     function closePanel(panel) { panel.classList.remove('nd-show'); }
+
+    // Moving panels: drag the title bar. All panels share one position, the top-left corner in
+    // px ({x, y}, or null = centred by the CSS). Positioned by its top-left corner, a panel
+    // grows downwards when its content loads, so its title bar stays on screen
+    let panelPos = load('panel_pos', null);
+    function clampPanel(panel, x, y) {
+        const maxX = Math.max(4, window.innerWidth - panel.offsetWidth - 4);
+        const maxY = Math.max(4, window.innerHeight - panel.offsetHeight - 4);
+        return [Math.min(Math.max(4, x), maxX), Math.min(Math.max(4, y), maxY)];
+    }
+    function placePanel(panel) {
+        if (!panelPos) {
+            panel.style.left = panel.style.top = panel.style.transform = '';
+            return;
+        }
+        const [x, y] = clampPanel(panel, panelPos.x, panelPos.y);
+        panel.style.left = x + 'px';
+        panel.style.top = y + 'px';
+        panel.style.transform = 'none';
+    }
+    function openPanelNow() { return PANELS.find(p => p.classList.contains('nd-show')); }
+
+    let panelDrag = null;
+    PANELS.forEach(panel => {
+        const bar = panel.querySelector('h3');
+        bar.addEventListener('pointerdown', (e) => {
+            if (e.target.closest('button, a, input')) return; // the x button still works
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
+            const r = panel.getBoundingClientRect();
+            panelDrag = { panel, id: e.pointerId, sx: e.clientX, sy: e.clientY, ox: e.clientX - r.left, oy: e.clientY - r.top, moved: false };
+            try { bar.setPointerCapture(e.pointerId); } catch (err) { /* not supported */ }
+        });
+        bar.addEventListener('pointermove', (e) => {
+            const d = panelDrag;
+            if (!d || e.pointerId !== d.id) return;
+            if (!d.moved && Math.abs(e.clientX - d.sx) < 4 && Math.abs(e.clientY - d.sy) < 4) return;
+            d.moved = true;
+            const [x, y] = clampPanel(panel, e.clientX - d.ox, e.clientY - d.oy);
+            panel.style.left = x + 'px';
+            panel.style.top = y + 'px';
+            panel.style.transform = 'none';
+            if (e.cancelable) e.preventDefault();
+        });
+        const end = (e) => {
+            const d = panelDrag;
+            if (!d || e.pointerId !== d.id) return;
+            panelDrag = null;
+            if (!d.moved) return;
+            panelPos = { x: parseFloat(panel.style.left) || 0, y: parseFloat(panel.style.top) || 0 };
+            save('panel_pos', panelPos);
+        };
+        bar.addEventListener('pointerup', end);
+        bar.addEventListener('pointercancel', end);
+    });
 
     // Settings
     const sizeInput = settingsPanel.querySelector('#nd-size');
@@ -1078,6 +1134,10 @@
         pos = { x: 'right', xv: 16, y: 'bottom', yv: 120 };
         save('pos', pos);
         applyLayout();
+        // Panels back in the middle too
+        panelPos = null;
+        save('panel_pos', null);
+        PANELS.forEach(placePanel);
     });
     // API key: Save stores the key straight away, then checks it with one call (key info).
     // Torn's access levels: 1 Public, 2 Minimal, 3 Limited, 4 Full
@@ -2297,7 +2357,11 @@
     // -------------------------------------------------------------------
     // 9. Start-up, resize and other tabs
     // -------------------------------------------------------------------
-    window.addEventListener('resize', applyLayout);
+    window.addEventListener('resize', () => {
+        applyLayout();
+        const open = openPanelNow();
+        if (open) placePanel(open);
+    });
     window.addEventListener('storage', (e) => {
         if (!e.key || !e.key.startsWith(KEY)) return;
         size = load('size', 100);
@@ -2307,6 +2371,7 @@
         pos = load('pos', pos);
         apiKey = load('api_key', '');
         apiStatus = load('api_status', null);
+        panelPos = load('panel_pos', null);
         session = load('session', null);
         seen = load('seen', {}) || {};
         if (e.key === KEY + 'war') {
