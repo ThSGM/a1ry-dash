@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         a1ry Dash
 // @namespace    https://github.com/ThSGM/a1ry-dash
-// @version      0.32
+// @version      0.34
 // @description  A movable round launcher for Torn: tap it for a menu of shortcuts (faction messages, settings and your own links). Desktop, mobile and TornPDA
 // @author       ThSGM
 // @match        https://www.torn.com/*
@@ -55,8 +55,15 @@
 //              (type, text, options one per line; Back / Next question /
 //              Finish), a check screen, then Confirm and send. The server
 //              gives the ID, MMDD_XX (TCT date + number)
-//   War        (crossed swords) a fixed group: tap it and two more bubbles pop
-//              out sideways (towards the middle): Faction war (flag) and Chain (chain)
+//   War        (crossed swords) a fixed group: tap it and three more bubbles pop
+//              out sideways (towards the middle): Faction war (flag), Chain (chain)
+//              and RW Stats (document): the faction sheet's War tab for the current
+//              (or last) ranked war: war ID, enemy, score, started, last updated, and
+//              your own respect, hits, assists, adjusted and average respect,
+//              milestones and outside hits, with a link to the War tab. Officers
+//              update the tab from the sheet. The last copy is kept (a1ry_dash_war)
+//              and shows at once; a newer one is fetched in the background when the
+//              copy is over a minute old, starting as soon as the War group opens
 //   Items      (box) a fixed group: Items (backpack) and Faction armory (locker)
 //   <yours>    one node per shortcut; its icon is up to 3 letters (the first
 //              letter of its name by default)
@@ -104,7 +111,7 @@
     if (document.getElementById('a1ry-dash')) return;
 
     // Keep in step with @version above (GM_info isn't available in every userscript host)
-    const SCRIPT_VERSION = '0.32';
+    const SCRIPT_VERSION = '0.34';
     const KEY = 'a1ry_dash_';
     // Settings' Update button: the script's Greasy Fork page, whose Install button updates it.
     // Empty = greyed out
@@ -120,6 +127,7 @@
     const SERVER_URL = 'https://script.google.com/macros/s/AKfycbyL6VVu7nxUfOh02DWUjUAOFTQr3kXJ4Wsi41ED5a9-7arkJQPjk44wXwP8_FPcjGT9/exec';
     const MSG_STALE_MS = 60 * 1000;      // refetch messages when the copy is older than this
     const MSG_BUSY_MS = 30 * 1000;      // another tab's fetch counts as running for this long
+    const WAR_STALE_MS = 60 * 1000;      // RW Stats: refetch when the saved copy is older than this
 
     // Going offline: what each request costs the faction (shown next to the choice)
     const OFFLINE_PRICE = { bounty: '$100k-$1m', merc: '$3m', stricken: '$3.5m' };
@@ -138,12 +146,14 @@
         { id: 'offline', label: 'Going offline', icon: 'bed', kind: 'offline' },
     ];
 
-    // Fixed groups after the built-ins: tapping one pops its secondary bubbles out beside it
+    // Fixed groups after the built-ins: tapping one pops its secondary bubbles out beside it.
+    // A bubble is a link (url), or opens a panel (kind)
     const FACTION_URL = 'https://www.torn.com/factions.php?step=your&type=1#/';
     const GROUPS = [
         { id: 'war', label: 'War', icon: 'swords', links: [
             { label: 'Faction war', icon: 'flag', url: FACTION_URL + 'war/rank' },
             { label: 'Chain', icon: 'chain', url: FACTION_URL + 'war/chain' },
+            { label: 'RW Stats', icon: 'doc', kind: 'rwstats' },
         ] },
         { id: 'items', label: 'Items', icon: 'box', links: [
             { label: 'Items', icon: 'backpack', url: 'https://www.torn.com/item.php' },
@@ -250,6 +260,8 @@
         // Two crossed swords: blade, guard, grip and pommel each
         swords: '<path d="M3 3l13 13M14 18l4-4M17 17l2.5 2.5"/><circle cx="20.5" cy="20.5" r="1"/>' +
             '<path d="M21 3L8 16M6 14l4 4M7 17l-2.5 2.5"/><circle cx="3.5" cy="20.5" r="1"/>',
+        // A page with a folded corner and lines of text (RW Stats)
+        doc: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 12h6M9 15h6M9 18h4"/>',
         // A chain: two links end to end, joined by a third seen edge-on
         chain: '<g transform="rotate(-45 12 12)"><rect x="0.5" y="8.5" width="10" height="7" rx="3.5"/>' +
             '<rect x="13.5" y="8.5" width="10" height="7" rx="3.5"/><path d="M7 12h10"/></g>',
@@ -464,6 +476,23 @@
         .nd-switch input:checked + .nd-track { background: #a33 !important; }
         .nd-switch input:checked + .nd-track::after { transform: translateX(calc(18px * var(--p))); }
         .nd-switch input:focus-visible + .nd-track { outline: 2px solid #888; }
+        /* RW Stats */
+        .nd-war-vs { color: #fff; font-weight: bold; }
+        .nd-war-vs small { color: #888; font-weight: normal; }
+        .nd-war-score { display: flex; align-items: baseline; gap: calc(8px * var(--p)); margin: calc(6px * var(--p)) 0 calc(2px * var(--p)); }
+        .nd-war-score b { font-size: calc(20px * var(--p)); }
+        .nd-war-score .nd-up { color: #6c6; }
+        .nd-war-score .nd-down { color: #f66; }
+        .nd-war-score span { color: #888; font-size: calc(12px * var(--p)); }
+        .nd-war-meta { color: #aaa; font-size: calc(12px * var(--p)); line-height: 1.5; }
+        .nd-war-meta b { color: #ddd; font-weight: normal; }
+        .nd-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: calc(6px * var(--p)); margin-top: calc(6px * var(--p)); }
+        .nd-tile { border: 1px solid #333; border-radius: calc(6px * var(--p)); background: #1a1a1a !important; padding: calc(6px * var(--p)) calc(4px * var(--p)); text-align: center; }
+        .nd-tile b { display: block; color: #e0b030; font-size: calc(18px * var(--p)); }
+        .nd-tile small { color: #888; font-size: calc(11px * var(--p)); }
+        .nd-kv { display: flex; justify-content: space-between; padding: calc(3px * var(--p)) calc(2px * var(--p)); border-bottom: 1px solid #262626; color: #aaa; }
+        .nd-kv:last-child { border-bottom: none; }
+        .nd-kv b { color: #eee; font-weight: normal; }
         a.nd-btn { display: flex; align-items: center; justify-content: center; text-decoration: none !important; }
         .nd-btn[aria-disabled="true"], .nd-btn:disabled { opacity: 0.4; cursor: not-allowed; }
     `;
@@ -676,6 +705,14 @@
         <div class="nd-row" id="nd-adm-foot"><button type="button" class="nd-btn" id="nd-adm-done">Back</button></div>`;
     document.body.appendChild(admPanel);
 
+    const warPanel = document.createElement('div');
+    warPanel.className = 'nd-panel';
+    warPanel.innerHTML = `
+        <h3>RW Stats <button type="button" class="nd-x" id="nd-war-close" aria-label="Close" title="Close">\u00D7</button></h3>
+        <div id="nd-war-body"></div>
+        <div class="nd-row"><a class="nd-btn" id="nd-war-sheet" target="_blank" rel="noopener" style="display: none">Open the War tab</a></div>`;
+    document.body.appendChild(warPanel);
+
     // -------------------------------------------------------------------
     // 4. Position and size
     // -------------------------------------------------------------------
@@ -796,15 +833,19 @@
             // A group's secondary bubbles: links, hidden until the group is tapped
             if (item.kind === 'group') {
                 item.group.links.forEach(l => {
-                    const a = document.createElement('a');
+                    const a = document.createElement(l.kind ? 'button' : 'a');
                     a.className = 'nd-node nd-child nd-subnode';
-                    a.dataset.kind = 'link';
+                    a.dataset.kind = l.kind || 'link';
                     a.dataset.parent = item.group.id;
                     a.title = l.label;
                     a.setAttribute('aria-label', l.label);
                     a.tabIndex = -1;
-                    a.href = l.url;
-                    if (newTab) { a.target = '_blank'; a.rel = 'noopener'; }
+                    if (l.kind) {
+                        a.type = 'button';
+                    } else {
+                        a.href = l.url;
+                        if (newTab) { a.target = '_blank'; a.rel = 'noopener'; }
+                    }
                     a.innerHTML = svg(l.icon);
                     root.appendChild(a);
                 });
@@ -888,10 +929,15 @@
         const child = e.target.closest('.nd-child');
         if (!child) return;
         const kind = child.dataset.kind;
-        if (kind === 'group') { setGroup(openGroup === child.dataset.group ? null : child.dataset.group); return; }
+        if (kind === 'group') {
+            setGroup(openGroup === child.dataset.group ? null : child.dataset.group);
+            if (openGroup === 'war') loadWar(false); // so RW Stats is usually ready when tapped
+            return;
+        }
         if (kind === 'settings') { setOpen(false); openSettings(); }
         else if (kind === 'messages') { setOpen(false); openMessages(); }
         else if (kind === 'offline') { setOpen(false); openOffline(); }
+        else if (kind === 'rwstats') { setOpen(false); openWar(); }
         else if (kind === 'add') { setOpen(false); openAdd(); }
         else setOpen(false); // links navigate by themselves
     });
@@ -906,6 +952,7 @@
         if (msgPanel.classList.contains('nd-show')) closePanel(msgPanel);
         else if (mAdmPanel.classList.contains('nd-show')) openMessages();
         else if (offPanel.classList.contains('nd-show')) closePanel(offPanel);
+        else if (warPanel.classList.contains('nd-show')) closePanel(warPanel);
         else if (admPanel.classList.contains('nd-show')) openOffline();
         else if (helpPanel.classList.contains('nd-show')) openSettings();
         else if (settingsPanel.classList.contains('nd-show')) closePanel(settingsPanel);
@@ -962,6 +1009,7 @@
         closePanel(offPanel);
         closePanel(admPanel);
         closePanel(mAdmPanel);
+        closePanel(warPanel);
         panel.classList.add('nd-show');
     }
     function closePanel(panel) { panel.classList.remove('nd-show'); }
@@ -1062,6 +1110,8 @@
             save('msgs', null);
             offData = null;
             save('offline', null);
+            warData = null;
+            save('war', null);
             renderBadges();
         }
         apiKey = key;
@@ -2127,6 +2177,124 @@
     });
 
     // -------------------------------------------------------------------
+    // 8e. RW Stats: the faction sheet's War tab (server a=war). The last reply is saved
+    //     (a1ry_dash_war, shared across tabs) and shown at once; it is refetched in the
+    //     background when over WAR_STALE_MS old, from the moment the War group opens
+    // -------------------------------------------------------------------
+    const warBody = warPanel.querySelector('#nd-war-body');
+    let warData = load('war', null); // { time, war, me, sheet, error }
+    let warLoading = false;
+
+    function fmtNum(n) {
+        return Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 2 });
+    }
+    // "12 min ago", "3 h 5 min ago", "2 d ago"
+    function ago(iso) {
+        const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+        if (isNaN(m)) return '';
+        if (m < 1) return 'just now';
+        if (m < 60) return m + ' min ago';
+        if (m < 1440) return Math.floor(m / 60) + ' h ' + (m % 60) + ' min ago';
+        return Math.floor(m / 1440) + ' d ago';
+    }
+    function warMeta(parent, label, value) {
+        const d = el('div');
+        d.append(label + ': ');
+        d.appendChild(el('b', '', value));
+        parent.appendChild(d);
+    }
+
+    function renderWar() {
+        warBody.textContent = '';
+        setSheetLink(warPanel.querySelector('#nd-war-sheet'), warData && warData.sheet);
+        if (!apiKey) {
+            warBody.appendChild(el('div', 'nd-status nd-warn', 'Add your API key in Settings first.'));
+            return;
+        }
+        if (warData && warData.error) warBody.appendChild(el('div', 'nd-status nd-bad', warData.error));
+        if (!warData || warData.war === undefined) {
+            warBody.appendChild(el('div', 'nd-empty', warLoading ? 'Loading...' : 'Not loaded yet.'));
+            return;
+        }
+        const w = warData.war;
+        if (!w) {
+            warBody.appendChild(el('div', 'nd-empty', 'No war stats yet. An officer updates them from the sheet.'));
+            return;
+        }
+        // The war
+        const top = el('div', 'nd-section');
+        const vs = el('div', 'nd-war-vs', 'vs ' + (w.enemy || '?') + ' ');
+        vs.appendChild(el('small', '', 'war ' + w.id + (w.result ? ' \u00B7 ' + w.result : '')));
+        top.appendChild(vs);
+        if (w.ours !== null && w.theirs !== null) {
+            const sc = el('div', 'nd-war-score');
+            sc.appendChild(el('b', w.ours >= w.theirs ? 'nd-up' : 'nd-down', fmtNum(w.ours)));
+            sc.appendChild(el('span', '', 'to'));
+            sc.appendChild(el('b', '', fmtNum(w.theirs)));
+            if (w.target) sc.appendChild(el('span', '', 'target ' + fmtNum(w.target)));
+            top.appendChild(sc);
+        }
+        const meta = el('div', 'nd-war-meta');
+        if (w.started) warMeta(meta, 'Started', tct(w.started));
+        if (w.ended) warMeta(meta, 'Ended', tct(w.ended));
+        if (w.updated) warMeta(meta, 'Last updated', tct(w.updated) + ' (' + ago(w.updated) + ')');
+        top.appendChild(meta);
+        if (!w.complete) top.appendChild(el('div', 'nd-status nd-warn', 'The last update was cut short, so the stats may be missing recent hits.'));
+        warBody.appendChild(top);
+        // The player's stats
+        const mine = el('div', 'nd-section');
+        mine.appendChild(el('label', '', 'Your stats' + (session && session.name ? ' (' + session.name + ')' : '')));
+        const me = warData.me;
+        if (!me) {
+            mine.appendChild(el('div', 'nd-empty', 'No hits recorded for you in this war yet.'));
+        } else {
+            const tiles = el('div', 'nd-tiles');
+            [['Respect', me.respect], ['Hits', me.hits], ['Assists', me.assists]].forEach(([k, v]) => {
+                const t = el('div', 'nd-tile');
+                t.appendChild(el('b', '', fmtNum(v)));
+                t.appendChild(el('small', '', k));
+                tiles.appendChild(t);
+            });
+            mine.appendChild(tiles);
+            const list = el('div');
+            list.style.marginTop = 'calc(8px * var(--p))';
+            [['Adjusted respect', me.adjusted_respect], ['Average respect', me.avg_respect],
+                ['Milestone hits', me.milestones], ['Outside hits', me.outside_hits]].forEach(([k, v]) => {
+                const r = el('div', 'nd-kv', k);
+                r.appendChild(el('b', '', fmtNum(v)));
+                list.appendChild(r);
+            });
+            mine.appendChild(list);
+        }
+        warBody.appendChild(mine);
+    }
+
+    // Fetch unless the saved copy is fresh (or force). A failed fetch keeps the last copy
+    async function loadWar(force) {
+        if (warLoading || !apiKey) return;
+        if (!force && warData && warData.war !== undefined && !warData.error && Date.now() - (warData.time || 0) < WAR_STALE_MS) return;
+        warLoading = true;
+        if (!warData && warPanel.classList.contains('nd-show')) renderWar();
+        try {
+            const r = await withSession({ a: 'war' });
+            warData = { time: Date.now(), war: r.war || null, me: r.me || null, sheet: r.sheet };
+        } catch (e) {
+            warData = { ...(warData || {}), error: e.message };
+        } finally {
+            warLoading = false;
+        }
+        save('war', warData);
+        if (warPanel.classList.contains('nd-show')) renderWar();
+    }
+
+    function openWar() {
+        renderWar();
+        openPanel(warPanel);
+        loadWar(false);
+    }
+    warPanel.querySelector('#nd-war-close').addEventListener('click', () => closePanel(warPanel));
+
+    // -------------------------------------------------------------------
     // 9. Start-up, resize and other tabs
     // -------------------------------------------------------------------
     window.addEventListener('resize', applyLayout);
@@ -2141,6 +2309,10 @@
         apiStatus = load('api_status', null);
         session = load('session', null);
         seen = load('seen', {}) || {};
+        if (e.key === KEY + 'war') {
+            warData = load('war', null);
+            if (warPanel.classList.contains('nd-show')) renderWar();
+        }
         if (e.key === KEY + 'msgs') {
             msgs = load('msgs', null);
             // Don't wipe answers the user is typing; their Save still works on the old copy

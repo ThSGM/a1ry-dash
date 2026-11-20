@@ -38,10 +38,17 @@ top half. If the screen is too short for one column, the rest go in a second col
   yet*). **Mark placed** records it as done (status "placed by" you); it's a separate step on
   purpose. Merc orders use a Public API key you save in the Admin panel itself, separate from
   the key in Settings; it is sent only to C39.
-- **War** (crossed swords) and **Items** (box): tap one and two more bubbles pop out sideways from it,
+- **War** (crossed swords) and **Items** (box): tap one and more bubbles pop out sideways from it,
   towards the middle of the screen.
-  War: **Faction war** (flag) and **Chain** (chain). Items: **Items** (backpack) and **Faction
-  armory** (locker). Tap the group again, or anything else, to fold them away. These are fixed.
+  War: **Faction war** (flag), **Chain** (chain) and **RW Stats** (document). Items: **Items**
+  (backpack) and **Faction armory** (locker). Tap the group again, or anything else, to fold
+  them away. These are fixed.
+- **RW Stats** shows the faction's stats for the current (or last) ranked war, from the War tab
+  of the faction sheet: the war ID, the enemy, the score, when it started and when the stats were
+  last updated, then your own respect, hits and assists, adjusted and average respect, milestone
+  hits and outside hits. **Open the War tab** opens the sheet (it needs access to the sheet).
+  Officers update the stats from the sheet. The last copy is kept on your device and shows at
+  once; a newer one is fetched in the background (from the moment you open the War group).
 - **Your shortcuts**: one button per link, showing its icon: up to 3 letters (the first
   letter of its name if you don't choose).
 - **+**: add a shortcut. Tap a suggestion (Hospital, Gym), or give a name, an
