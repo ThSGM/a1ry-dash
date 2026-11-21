@@ -45,9 +45,13 @@ top half. If the screen is too short for one column, the rest go in a second col
   them away. These are fixed.
 - **RW Stats** shows the faction's stats for the current (or last) ranked war, from the War tab
   of the faction sheet: the war ID, the enemy, the score, when it started and when the stats were
-  last updated, then your own respect, hits and assists, adjusted and average respect, milestone
-  hits and outside hits. **Open the War tab** opens the sheet (it needs access to the sheet).
-  Officers update the stats from the sheet. The last copy is kept on your device and shows at
+  last updated, then your own adjusted respect, hits and assists, plus your respect, average
+  respect, milestone hits and outside hits. **Show spreadsheet** opens the War tab of the sheet
+  (it needs access to the sheet). The **?** next to the × explains the stats: adjusted respect is
+  your war respect minus your milestone hits (10, 25, 50, ...) on the chain, with each milestone
+  hit counted at your average for non-milestone hits instead.
+  The sheet updates the stats every 30 minutes while a war is on, and officers can also update them by
+  hand. The last copy is kept on your device and shows at
   once; a newer one is fetched in the background (from the moment you open the War group).
 - **Your shortcuts**: one button per link, showing its icon: up to 3 letters (the first
   letter of its name if you don't choose).

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         a1ry Dash
 // @namespace    https://github.com/ThSGM/a1ry-dash
-// @version      0.35
+// @version      0.37
 // @description  A movable round launcher for Torn: tap it for a menu of shortcuts (faction messages, settings and your own links). Desktop, mobile and TornPDA
 // @author       ThSGM
 // @match        https://www.torn.com/*
@@ -58,10 +58,13 @@
 //   War        (crossed swords) a fixed group: tap it and three more bubbles pop
 //              out sideways (towards the middle): Faction war (flag), Chain (chain)
 //              and RW Stats (document): the faction sheet's War tab for the current
-//              (or last) ranked war: war ID, enemy, score, started, last updated, and
-//              your own respect, hits, assists, adjusted and average respect,
-//              milestones and outside hits, with a link to the War tab. Officers
-//              update the tab from the sheet. The last copy is kept (a1ry_dash_war)
+//              (or last) ranked war: war ID, enemy, score, started, updated, and
+//              your own adjusted respect, hits and assists (tiles), then respect,
+//              average respect, milestones and outside hits, with a Show
+//              spreadsheet link to the War tab. A ? in the title opens a short
+//              help page (what adjusted respect means). The sheet updates
+//              the tab every 30 minutes during a war (officers can also update it by
+//              hand). The last copy is kept (a1ry_dash_war)
 //              and shows at once; a newer one is fetched in the background when the
 //              copy is over a minute old, starting as soon as the War group opens
 //   Items      (box) a fixed group: Items (backpack) and Faction armory (locker)
@@ -115,7 +118,7 @@
     if (document.getElementById('a1ry-dash')) return;
 
     // Keep in step with @version above (GM_info isn't available in every userscript host)
-    const SCRIPT_VERSION = '0.35';
+    const SCRIPT_VERSION = '0.37';
     const KEY = 'a1ry_dash_';
     // Settings' Update button: the script's Greasy Fork page, whose Install button updates it.
     // Empty = greyed out
@@ -379,6 +382,8 @@
         .nd-panel h3 .nd-x { flex: 0 0 auto; width: calc(28px * var(--p)); height: calc(28px * var(--p)); margin: calc(-6px * var(--p)) 0; padding: 0; border: none !important;
             background: none !important; color: #999 !important; font-size: calc(22px * var(--p)); line-height: calc(28px * var(--p)); cursor: pointer; border-radius: calc(4px * var(--p)); }
         .nd-panel h3 .nd-x:hover, .nd-panel h3 .nd-x:focus-visible { color: #fff !important; background: #333 !important; outline: none; }
+        .nd-panel h3 .nd-q { font-size: calc(17px * var(--p)); font-weight: bold; }
+        .nd-h3-btns { display: flex; gap: calc(2px * var(--p)); }
         .nd-help p { margin: 0 0 calc(10px * var(--p)); line-height: 1.4; color: #ccc; }
         .nd-help b { color: #fff; }
         .nd-btn.nd-small { flex: 0 0 auto; margin-top: calc(6px * var(--p)); padding: calc(5px * var(--p)) calc(10px * var(--p)); font-size: calc(12px * var(--p)); font-weight: normal; }
@@ -491,8 +496,8 @@
         .nd-war-score .nd-up { color: #6c6; }
         .nd-war-score .nd-down { color: #f66; }
         .nd-war-score span { color: #888; font-size: calc(12px * var(--p)); }
-        .nd-war-meta { color: #aaa; font-size: calc(12px * var(--p)); line-height: 1.5; }
-        .nd-war-meta b { color: #ddd; font-weight: normal; }
+        .nd-war-meta { color: #777; font-size: calc(10.5px * var(--p)); line-height: 1.45; }
+        .nd-war-meta b { color: #aaa; font-weight: normal; }
         .nd-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: calc(6px * var(--p)); margin-top: calc(6px * var(--p)); }
         .nd-tile { border: 1px solid #333; border-radius: calc(6px * var(--p)); background: #1a1a1a !important; padding: calc(6px * var(--p)) calc(4px * var(--p)); text-align: center; }
         .nd-tile b { display: block; color: #e0b030; font-size: calc(18px * var(--p)); }
@@ -715,10 +720,22 @@
     const warPanel = document.createElement('div');
     warPanel.className = 'nd-panel';
     warPanel.innerHTML = `
-        <h3>RW Stats <button type="button" class="nd-x" id="nd-war-close" aria-label="Close" title="Close">\u00D7</button></h3>
+        <h3>RW Stats <span class="nd-h3-btns"><button type="button" class="nd-x nd-q" id="nd-war-help" aria-label="Help" title="Help">?</button><button type="button" class="nd-x" id="nd-war-close" aria-label="Close" title="Close">\u00D7</button></span></h3>
         <div id="nd-war-body"></div>
-        <div class="nd-row"><a class="nd-btn" id="nd-war-sheet" target="_blank" rel="noopener" style="display: none">Open the War tab</a></div>`;
+        <div class="nd-row"><a class="nd-btn" id="nd-war-sheet" target="_blank" rel="noopener" style="display: none">Show spreadsheet</a></div>`;
     document.body.appendChild(warPanel);
+
+    const warHelpPanel = document.createElement('div');
+    warHelpPanel.className = 'nd-panel';
+    warHelpPanel.innerHTML = `
+        <h3>RW Stats help <button type="button" class="nd-x" id="nd-wh-close" aria-label="Back to RW Stats" title="Back to RW Stats">\u00D7</button></h3>
+        <div class="nd-help">
+            <p><b>Where the stats come from.</b> The War tab of the faction sheet, for the current (or last) ranked war. It updates itself every 30 minutes while a war is on, and officers can also update it from the sheet; <b>Updated</b> shows how recent it is.</p>
+            <p><b>Adjusted respect.</b> Adjusted respect is equal to your war respect score minus milestone hits (10, 25, 50, ...) on the chain. For each milestone hit we add a respect score equal to your non-milestone hit average.</p>
+            <p><b>Show spreadsheet</b> opens the War tab. It needs access to the sheet.</p>
+        </div>
+        <div class="nd-row"><button type="button" class="nd-btn nd-primary" id="nd-wh-back">Back</button></div>`;
+    document.body.appendChild(warHelpPanel);
 
     // -------------------------------------------------------------------
     // 4. Position and size
@@ -960,6 +977,7 @@
         else if (mAdmPanel.classList.contains('nd-show')) openMessages();
         else if (offPanel.classList.contains('nd-show')) closePanel(offPanel);
         else if (warPanel.classList.contains('nd-show')) closePanel(warPanel);
+        else if (warHelpPanel.classList.contains('nd-show')) openWar();
         else if (admPanel.classList.contains('nd-show')) openOffline();
         else if (helpPanel.classList.contains('nd-show')) openSettings();
         else if (settingsPanel.classList.contains('nd-show')) closePanel(settingsPanel);
@@ -1008,7 +1026,7 @@
     // -------------------------------------------------------------------
     // 7. Panels
     // -------------------------------------------------------------------
-    const PANELS = [settingsPanel, helpPanel, addPanel, msgPanel, mAdmPanel, offPanel, admPanel, warPanel];
+    const PANELS = [settingsPanel, helpPanel, addPanel, msgPanel, mAdmPanel, offPanel, admPanel, warPanel, warHelpPanel];
     function openPanel(panel) {
         PANELS.forEach(closePanel);
         panel.classList.add('nd-show');
@@ -2297,7 +2315,7 @@
         const meta = el('div', 'nd-war-meta');
         if (w.started) warMeta(meta, 'Started', tct(w.started));
         if (w.ended) warMeta(meta, 'Ended', tct(w.ended));
-        if (w.updated) warMeta(meta, 'Last updated', tct(w.updated) + ' (' + ago(w.updated) + ')');
+        if (w.updated) warMeta(meta, 'Updated', tct(w.updated) + ' (' + ago(w.updated) + ')');
         top.appendChild(meta);
         if (!w.complete) top.appendChild(el('div', 'nd-status nd-warn', 'The last update was cut short, so the stats may be missing recent hits.'));
         warBody.appendChild(top);
@@ -2309,7 +2327,7 @@
             mine.appendChild(el('div', 'nd-empty', 'No hits recorded for you in this war yet.'));
         } else {
             const tiles = el('div', 'nd-tiles');
-            [['Respect', me.respect], ['Hits', me.hits], ['Assists', me.assists]].forEach(([k, v]) => {
+            [['Adjusted respect', me.adjusted_respect], ['Hits', me.hits], ['Assists', me.assists]].forEach(([k, v]) => {
                 const t = el('div', 'nd-tile');
                 t.appendChild(el('b', '', fmtNum(v)));
                 t.appendChild(el('small', '', k));
@@ -2318,7 +2336,7 @@
             mine.appendChild(tiles);
             const list = el('div');
             list.style.marginTop = 'calc(8px * var(--p))';
-            [['Adjusted respect', me.adjusted_respect], ['Average respect', me.avg_respect],
+            [['Respect', me.respect], ['Average respect', me.avg_respect],
                 ['Milestone hits', me.milestones], ['Outside hits', me.outside_hits]].forEach(([k, v]) => {
                 const r = el('div', 'nd-kv', k);
                 r.appendChild(el('b', '', fmtNum(v)));
@@ -2353,6 +2371,9 @@
         loadWar(false);
     }
     warPanel.querySelector('#nd-war-close').addEventListener('click', () => closePanel(warPanel));
+    warPanel.querySelector('#nd-war-help').addEventListener('click', () => openPanel(warHelpPanel));
+    warHelpPanel.querySelector('#nd-wh-close').addEventListener('click', openWar);
+    warHelpPanel.querySelector('#nd-wh-back').addEventListener('click', openWar);
 
     // -------------------------------------------------------------------
     // 9. Start-up, resize and other tabs
